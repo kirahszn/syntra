@@ -1,3 +1,4 @@
+// server.cjs - PRODUCTION READY
 const express = require('express')
 const cors = require('cors')
 const bodyParser = require('body-parser')
@@ -9,9 +10,9 @@ dotenv.config()
 const app = express()
 const PORT = process.env.PORT || 5000
 
+// CORS - Allow ALL origins for production
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
-  credentials: true,
+  origin: '*', // Allow all origins (simplest for now)
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }))
@@ -24,19 +25,18 @@ const AGENT_ADDRESS = process.env.AGENT_ADDRESS
 const AGENT_PRIVATE_KEY = process.env.AGENT_PRIVATE_KEY
 const CMC_API_KEY = process.env.CMC_API_KEY
 
-// PancakeSwap Router
-const PANCAKE_ROUTER = '0x10ED43C718714eb63d5aA57B78B54704E256024E'
-
-// Tokens on BSC
-const TOKENS = {
-  WBNB: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c',
-  USDT: '0x55d398326f99059fF775485246999027B3197955'
-}
-
-console.log('🚀 SYNTRA - 100% REAL - NO SIMULATIONS')
+console.log('🚀 SYNTRA - PRODUCTION')
 console.log('📍 Agent:', AGENT_ADDRESS)
-console.log('🔑 Private Key:', AGENT_PRIVATE_KEY ? '✅ Set' : '❌ Missing')
-console.log('🔗 BSC RPC:', BSC_RPC)
+
+// === HEALTH CHECK ===
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    message: 'Syntra backend is running',
+    agent: AGENT_ADDRESS,
+    timestamp: new Date().toISOString()
+  })
+})
 
 // === GET REAL BALANCE ===
 app.get('/api/balance', async (req, res) => {
@@ -44,15 +44,51 @@ app.get('/api/balance', async (req, res) => {
     const provider = new ethers.providers.JsonRpcProvider(BSC_RPC)
     const balanceWei = await provider.getBalance(AGENT_ADDRESS)
     const balanceBNB = parseFloat(ethers.utils.formatEther(balanceWei))
-    
-    console.log(`💰 Balance: ${balanceBNB} BNB`)
     res.json({ success: true, balance: balanceBNB })
   } catch (error) {
     res.json({ success: false, error: error.message })
   }
 })
 
-// === GET REAL BTC PRICE ===
+// === GET MARKET DATA ===
+app.get('/api/market-data', async (req, res) => {
+  try {
+    if (!CMC_API_KEY) {
+      return res.json({ success: false, error: 'CMC_API_KEY not configured' })
+    }
+    
+    const response = await fetch(
+      'https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest?symbol=BTC,ETH,SOL',
+      { headers: { 'X-CMC_PRO_API_KEY': CMC_API_KEY } }
+    )
+    const data = await response.json()
+    
+    if (!data.data) {
+      return res.json({ success: false, error: 'No data from CMC' })
+    }
+
+    const marketData = {
+      btc: {
+        price: data.data.BTC?.quote?.USD?.price || 0,
+        change24h: data.data.BTC?.quote?.USD?.percent_change_24h || 0
+      },
+      eth: {
+        price: data.data.ETH?.quote?.USD?.price || 0,
+        change24h: data.data.ETH?.quote?.USD?.percent_change_24h || 0
+      },
+      sol: {
+        price: data.data.SOL?.quote?.USD?.price || 0,
+        change24h: data.data.SOL?.quote?.USD?.percent_change_24h || 0
+      }
+    }
+
+    res.json({ success: true, marketData })
+  } catch (error) {
+    res.json({ success: false, error: error.message })
+  }
+})
+
+// === GET BTC PRICE ===
 app.get('/api/price', async (req, res) => {
   try {
     const response = await fetch(
@@ -78,7 +114,7 @@ async function executeRealBuy(amount) {
   const wallet = new ethers.Wallet(AGENT_PRIVATE_KEY, provider)
   
   const router = new ethers.Contract(
-    PANCAKE_ROUTER,
+    '0x10ED43C718714eb63d5aA57B78B54704E256024E',
     [
       'function swapExactETHForTokens(uint amountOutMin, address[] path, address to, uint deadline) external payable returns (uint[])',
       'function getAmountsOut(uint amountIn, address[] path) view returns (uint[])'
@@ -87,30 +123,22 @@ async function executeRealBuy(amount) {
   )
   
   const amountIn = ethers.utils.parseEther(amount.toString())
-  const path = [TOKENS.WBNB, TOKENS.USDT]
+  const path = ['0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c', '0x55d398326f99059fF775485246999027B3197955']
   const deadline = Math.floor(Date.now() / 1000) + 60 * 20
-  
-  console.log(`📈 BUY: Swapping ${amount} BNB → USDT on PancakeSwap`)
   
   const amounts = await router.getAmountsOut(amountIn, path)
   const expectedUSDT = parseFloat(ethers.utils.formatEther(amounts[1]))
-  console.log(`📊 Expected USDT: ${expectedUSDT}`)
   
   const tx = await router.swapExactETHForTokens(
-    0,
-    path,
-    wallet.address,
-    deadline,
+    0, path, wallet.address, deadline,
     { value: amountIn, gasLimit: 300000 }
   )
   
   const receipt = await tx.wait()
-  console.log(`✅ BUY executed: ${receipt.transactionHash}`)
   
   return {
     txHash: receipt.transactionHash,
-    expectedUSDT: expectedUSDT,
-    blockNumber: receipt.blockNumber
+    expectedUSDT: expectedUSDT
   }
 }
 
@@ -120,7 +148,7 @@ async function executeRealSell(usdtAmount) {
   const wallet = new ethers.Wallet(AGENT_PRIVATE_KEY, provider)
   
   const router = new ethers.Contract(
-    PANCAKE_ROUTER,
+    '0x10ED43C718714eb63d5aA57B78B54704E256024E',
     [
       'function swapExactTokensForETH(uint amountIn, uint amountOutMin, address[] path, address to, uint deadline) external returns (uint[])',
       'function getAmountsOut(uint amountIn, address[] path) view returns (uint[])'
@@ -129,128 +157,61 @@ async function executeRealSell(usdtAmount) {
   )
   
   const amountIn = ethers.utils.parseEther(usdtAmount.toString())
-  const path = [TOKENS.USDT, TOKENS.WBNB]
+  const path = ['0x55d398326f99059fF775485246999027B3197955', '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c']
   const deadline = Math.floor(Date.now() / 1000) + 60 * 20
-  
-  console.log(`📉 SELL: Swapping ${usdtAmount} USDT → BNB on PancakeSwap`)
   
   // Approve USDT
   const usdtContract = new ethers.Contract(
-    TOKENS.USDT,
+    '0x55d398326f99059fF775485246999027B3197955',
     ['function approve(address spender, uint amount) public returns (bool)'],
     wallet
   )
   
-  const approveTx = await usdtContract.approve(PANCAKE_ROUTER, amountIn)
-  await approveTx.wait()
-  console.log('✅ USDT approved')
-  
-  const amounts = await router.getAmountsOut(amountIn, path)
-  const expectedBNB = parseFloat(ethers.utils.formatEther(amounts[1]))
-  console.log(`📊 Expected BNB: ${expectedBNB}`)
+  await usdtContract.approve('0x10ED43C718714eb63d5aA57B78B54704E256024E', amountIn)
   
   const tx = await router.swapExactTokensForETH(
-    amountIn,
-    0,
-    path,
-    wallet.address,
-    deadline,
+    amountIn, 0, path, wallet.address, deadline,
     { gasLimit: 300000 }
   )
   
   const receipt = await tx.wait()
-  console.log(`✅ SELL executed: ${receipt.transactionHash}`)
   
   return {
     txHash: receipt.transactionHash,
-    expectedBNB: expectedBNB,
-    blockNumber: receipt.blockNumber
+    expectedBNB: parseFloat(ethers.utils.formatEther(await router.getAmountsOut(amountIn, path).then(a => a[1])))
   }
 }
 
-// === REAL TRADE ENDPOINT ===
+// === REAL TRADE ===
 app.post('/api/trade', async (req, res) => {
   try {
     const { decision, conviction, amount } = req.body
     const tradeAmount = amount || 0.001
-
-    if (!AGENT_PRIVATE_KEY) {
-      return res.status(400).json({ success: false, error: 'AGENT_PRIVATE_KEY not configured' })
-    }
 
     const priceRes = await fetch(`http://localhost:${PORT}/api/price`)
     const priceData = await priceRes.json()
     const currentPrice = priceData.price || 65000
 
     if (decision === 'BUY') {
-      // === REAL BUY ===
       const result = await executeRealBuy(tradeAmount)
-      
       position = {
         entryPrice: currentPrice,
         amount: tradeAmount,
         usdtReceived: result.expectedUSDT,
-        txHash: result.txHash,
-        timestamp: Date.now()
+        txHash: result.txHash
       }
-      
-      res.json({
-        success: true,
-        action: 'BUY',
-        price: currentPrice,
-        amount: tradeAmount,
-        usdtReceived: result.expectedUSDT,
-        txHash: result.txHash,
-        message: `✅ BUY: ${tradeAmount} BNB → ${result.expectedUSDT.toFixed(2)} USDT`
-      })
-
-    } else if (decision === 'SELL') {
-      // === REAL SELL ===
-      if (!position) {
-        return res.status(400).json({ success: false, error: 'No position to sell' })
-      }
-      
-      const usdtAmount = position.usdtReceived
-      const result = await executeRealSell(usdtAmount.toFixed(2))
-      
-      // === REAL P&L ===
-      const bnbChange = result.expectedBNB - position.amount
-      const pnl = bnbChange * currentPrice
-      
+      res.json({ success: true, action: 'BUY', price: currentPrice, amount: tradeAmount, txHash: result.txHash })
+    } else if (decision === 'SELL' && position) {
+      const result = await executeRealSell(position.usdtReceived.toFixed(2))
+      const pnl = (result.expectedBNB - position.amount) * currentPrice
       totalPnL += pnl
-      
-      trades.push({
-        entryPrice: position.entryPrice,
-        exitPrice: currentPrice,
-        amount: position.amount,
-        usdtAmount: usdtAmount,
-        bnbReceived: result.expectedBNB,
-        pnl: pnl,
-        txHash: result.txHash,
-        timestamp: Date.now()
-      })
-      
-      const response = {
-        success: true,
-        action: 'SELL',
-        price: currentPrice,
-        entryPrice: position.entryPrice,
-        pnl: pnl,
-        amount: position.amount,
-        bnbReceived: result.expectedBNB,
-        txHash: result.txHash,
-        message: pnl > 0 ? `✅ +$${pnl.toFixed(2)} PROFIT` : `❌ $${pnl.toFixed(2)} LOSS`
-      }
-      
+      trades.push({ entryPrice: position.entryPrice, exitPrice: currentPrice, amount: position.amount, pnl, txHash: result.txHash })
       position = null
-      res.json(response)
-
+      res.json({ success: true, action: 'SELL', price: currentPrice, entryPrice: position?.entryPrice, pnl, txHash: result.txHash })
     } else {
-      res.json({ success: false, error: 'Invalid decision' })
+      res.json({ success: false, error: 'Invalid decision or no position' })
     }
-    
   } catch (error) {
-    console.error('Trade error:', error)
     res.status(500).json({ success: false, error: error.message })
   }
 })
@@ -340,7 +301,6 @@ app.post('/api/reset', (req, res) => {
   position = null
   trades = []
   totalPnL = 0
-  console.log('🔄 Reset complete')
   res.json({ success: true, message: 'Reset complete' })
 })
 
@@ -348,54 +308,5 @@ app.post('/api/reset', (req, res) => {
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`)
   console.log(`📍 Agent: ${AGENT_ADDRESS}`)
-  console.log(`📊 Mode: 🔴 100% REAL - NO SIMULATIONS`)
-  console.log(`🔗 BSC RPC: ${BSC_RPC}`)
-})
-
-// === GET MARKET DATA FROM CMC (Backend) ===
-app.get('/api/market-data', async (req, res) => {
-  try {
-    const CMC_API_KEY = process.env.CMC_API_KEY
-    if (!CMC_API_KEY) {
-      return res.json({ success: false, error: 'CMC_API_KEY not configured' })
-    }
-
-    console.log('📊 Fetching market data from CMC...')
-    
-    const response = await fetch(
-      'https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest?symbol=BTC,ETH,SOL',
-      { headers: { 'X-CMC_PRO_API_KEY': CMC_API_KEY } }
-    )
-    
-    const data = await response.json()
-    
-    if (!data.data) {
-      return res.json({ success: false, error: 'No data from CMC' })
-    }
-
-    const marketData = {
-      btc: {
-        price: data.data.BTC?.quote?.USD?.price || 0,
-        change24h: data.data.BTC?.quote?.USD?.percent_change_24h || 0,
-        volume: data.data.BTC?.quote?.USD?.volume_24h || 0
-      },
-      eth: {
-        price: data.data.ETH?.quote?.USD?.price || 0,
-        change24h: data.data.ETH?.quote?.USD?.percent_change_24h || 0,
-        volume: data.data.ETH?.quote?.USD?.volume_24h || 0
-      },
-      sol: {
-        price: data.data.SOL?.quote?.USD?.price || 0,
-        change24h: data.data.SOL?.quote?.USD?.percent_change_24h || 0,
-        volume: data.data.SOL?.quote?.USD?.volume_24h || 0
-      }
-    }
-
-    console.log(`✅ Market data: BTC $${marketData.btc.price}, ETH $${marketData.eth.price}, SOL $${marketData.sol.price}`)
-    res.json({ success: true, marketData })
-    
-  } catch (error) {
-    console.error('Market data error:', error)
-    res.json({ success: false, error: error.message })
-  }
+  console.log(`📊 Mode: 🔴 PRODUCTION`)
 })
