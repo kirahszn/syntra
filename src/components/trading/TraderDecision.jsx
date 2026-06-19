@@ -1,4 +1,3 @@
-// src/components/trading/TraderDecision.jsx - REAL Decisions
 import React, { useState, useEffect } from 'react'
 import { useApp } from '../../context/AppContext'
 import { Brain, Zap, ArrowRight, Clock, Play, Square } from 'lucide-react'
@@ -33,7 +32,7 @@ export default function TraderDecision({ isMobile = false }) {
     checkStatus()
     const interval = setInterval(checkStatus, 3000)
     return () => clearInterval(interval)
-  }, [])
+  }, [API_URL])
 
   const startAutoTrade = async () => {
     try {
@@ -49,7 +48,7 @@ export default function TraderDecision({ isMobile = false }) {
       }
     } catch (error) {
       console.error('Start auto trade error:', error)
-      alert('Failed to start auto trading')
+      alert('Failed to start auto trading. Make sure backend is running.')
     }
   }
 
@@ -76,8 +75,7 @@ export default function TraderDecision({ isMobile = false }) {
       padding: isMobile ? '20px' : '28px',
       borderRadius: '20px',
       background: 'rgba(20, 20, 30, 0.8)',
-      backdropFilter: 'blur(20px) saturate(1.4)',
-      WebkitBackdropFilter: 'blur(20px) saturate(1.4)',
+      backdropFilter: 'blur(20px)',
       border: '1px solid rgba(255,255,255,0.06)'
     }}>
       {/* Header */}
@@ -103,10 +101,7 @@ export default function TraderDecision({ isMobile = false }) {
             <Brain size={isMobile ? 18 : 22} style={{ color: 'white' }} />
           </div>
           <div>
-            <h3 style={{ 
-              fontSize: isMobile ? '15px' : '17px', 
-              fontWeight: 600 
-            }}>
+            <h3 style={{ fontSize: isMobile ? '15px' : '17px', fontWeight: 600 }}>
               🤖 AI Trading
             </h3>
             <p style={{ 
@@ -186,7 +181,7 @@ export default function TraderDecision({ isMobile = false }) {
         </div>
       </div>
 
-      {/* Status Info */}
+      {/* Rest of the component remains the same */}
       <div style={{
         padding: '12px 16px',
         borderRadius: '12px',
@@ -212,7 +207,7 @@ export default function TraderDecision({ isMobile = false }) {
         </span>
       </div>
 
-      {/* AI Decision Display - From REAL Trade */}
+      {/* AI Decision Display */}
       {realTrade || trade ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? '12px' : '16px' }}>
           <div style={{
@@ -227,10 +222,7 @@ export default function TraderDecision({ isMobile = false }) {
             gap: '12px'
           }}>
             <div>
-              <p style={{ 
-                fontSize: isMobile ? '11px' : '13px', 
-                color: 'rgba(255,255,255,0.3)' 
-              }}>
+              <p style={{ fontSize: isMobile ? '11px' : '13px', color: 'rgba(255,255,255,0.3)' }}>
                 {realTrade ? 'REAL Trade Result' : 'Conviction Score'}
               </p>
               <p style={{ 
