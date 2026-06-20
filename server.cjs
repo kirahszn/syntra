@@ -13,6 +13,15 @@ const PORT = process.env.PORT || 5000
 app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization'] }))
 app.use(bodyParser.json())
 
+// === HEALTH CHECK ===
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    message: 'Syntra backend is running',
+    agent: process.env.AGENT_ADDRESS || 'Not set',
+    timestamp: new Date().toISOString()
+  })
+})
 // === CONFIGURATION ===
 const BSC_RPC = 'https://bsc-dataseed.binance.org/'
 const AGENT_ADDRESS = process.env.AGENT_ADDRESS
