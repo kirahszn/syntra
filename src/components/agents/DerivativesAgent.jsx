@@ -1,22 +1,45 @@
-import React from 'react'
-import { useApp } from '../../context/AppContext'
+import React, { useState, useEffect } from 'react'
+import { API_URL } from '../../utils/api'
 import { TrendingUp, TrendingDown, AlertTriangle, Zap } from 'lucide-react'
 
 export default function DerivativesAgent({ isMobile = false }) {
-  const { state } = useApp()
-  const agent = state.agents.find(a => a.type === 'derivatives')
-  const signal = agent?.signal
+  const [signal, setSignal] = useState(null)
+  const [loading, setLoading] = useState(true)
 
-  const getRiskColor = (risk) => {
-    if (risk < 0.3) return '#00D4AA'
-    if (risk < 0.6) return '#F59E0B'
-    return '#FF6B6B'
-  }
+  useEffect(() => {
+    const fetchSignal = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/agent-signals`)
+        const data = await response.json()
+        if (data.success && data.signals?.derivatives) {
+          setSignal(data.signals.derivatives)
+        }
+      } catch (error) {
+        console.error('Failed to fetch derivatives signal:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    
+    fetchSignal()
+    const interval = setInterval(fetchSignal, 5000)
+    return () => clearInterval(interval)
+  }, [])
 
-  const getRiskLabel = (risk) => {
-    if (risk < 0.3) return 'Low'
-    if (risk < 0.6) return 'Medium'
-    return 'High'
+  if (loading) {
+    return (
+      <div style={{
+        padding: isMobile ? '20px' : '28px',
+        borderRadius: '20px',
+        background: 'rgba(20, 20, 30, 0.6)',
+        backdropFilter: 'blur(20px)',
+        border: '1px solid rgba(255,255,255,0.06)'
+      }}>
+        <div style={{ textAlign: 'center', padding: '20px 0', color: 'rgba(255,255,255,0.2)' }}>
+          ⏳ Loading signal...
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -24,8 +47,7 @@ export default function DerivativesAgent({ isMobile = false }) {
       padding: isMobile ? '20px' : '28px',
       borderRadius: '20px',
       background: 'rgba(20, 20, 30, 0.6)',
-      backdropFilter: 'blur(20px) saturate(1.4)',
-      WebkitBackdropFilter: 'blur(20px) saturate(1.4)',
+      backdropFilter: 'blur(20px)',
       border: '1px solid rgba(255,255,255,0.06)'
     }}>
       <div style={{ 
@@ -49,26 +71,15 @@ export default function DerivativesAgent({ isMobile = false }) {
             📊
           </div>
           <div>
-            <h3 style={{ 
-              fontSize: isMobile ? '15px' : '17px', 
-              fontWeight: 600 
-            }}>
-              Derivatives Agent
-            </h3>
-            <p style={{ 
-              fontSize: isMobile ? '11px' : '12px', 
-              color: 'rgba(255,255,255,0.4)' 
-            }}>
+            <h3 style={{ fontSize: isMobile ? '15px' : '17px', fontWeight: 600 }}>Derivatives Agent</h3>
+            <p style={{ fontSize: isMobile ? '11px' : '12px', color: 'rgba(255,255,255,0.4)' }}>
               Funding & Leverage
             </p>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <AlertTriangle size={isMobile ? 12 : 14} style={{ color: signal ? '#FF6B6B' : 'rgba(255,255,255,0.1)' }} />
-          <span style={{ 
-            fontSize: isMobile ? '10px' : '12px', 
-            color: 'rgba(255,255,255,0.3)' 
-          }}>
+          <span style={{ fontSize: isMobile ? '10px' : '12px', color: 'rgba(255,255,255,0.3)' }}>
             {signal ? 'Active' : 'Idle'}
           </span>
         </div>
@@ -88,19 +99,23 @@ export default function DerivativesAgent({ isMobile = false }) {
             <div style={{
               padding: isMobile ? '8px' : '10px',
               borderRadius: '10px',
-              background: `rgba(${signal.squeezeRisk < 0.3 ? '0,212,170' : signal.squeezeRisk < 0.6 ? '245,158,11' : '255,107,107'}, 0.1)`,
+              background: signal.direction === 'bullish' ? 'rgba(0,212,170,0.1)' : 'rgba(255,107,107,0.1)',
               flexShrink: 0
             }}>
-              <TrendingUp size={isMobile ? 16 : 20} style={{ color: getRiskColor(signal.squeezeRisk) }} />
+              {signal.direction === 'bullish' 
+                ? <TrendingUp size={isMobile ? 16 : 20} style={{ color: '#00D4AA' }} />
+                : <TrendingDown size={isMobile ? 16 : 20} style={{ color: '#FF6B6B' }} />
+              }
             </div>
             <div>
-              <p style={{ fontSize: isMobile ? '11px' : '12px', color: 'rgba(255,255,255,0.3)' }}>Squeeze Risk</p>
+              <p style={{ fontSize: isMobile ? '11px' : '12px', color: 'rgba(255,255,255,0.3)' }}>Direction</p>
               <p style={{ 
                 fontSize: isMobile ? '14px' : '16px', 
                 fontWeight: 600,
-                color: getRiskColor(signal.squeezeRisk)
+                textTransform: 'capitalize',
+                color: signal.direction === 'bullish' ? '#00D4AA' : '#FF6B6B'
               }}>
-                {getRiskLabel(signal.squeezeRisk)} ({Math.round(signal.squeezeRisk * 100)}%)
+                {signal.direction}
               </p>
             </div>
           </div>
@@ -117,24 +132,19 @@ export default function DerivativesAgent({ isMobile = false }) {
             <div style={{
               padding: isMobile ? '8px' : '10px',
               borderRadius: '10px',
-              background: signal.imbalance > 0.3 ? 'rgba(0,212,170,0.1)' : signal.imbalance > -0.3 ? 'rgba(245,158,11,0.1)' : 'rgba(255,107,107,0.1)',
+              background: 'rgba(255,107,107,0.1)',
               flexShrink: 0
             }}>
-              {signal.imbalance > 0.3 
-                ? <TrendingUp size={isMobile ? 16 : 20} style={{ color: '#00D4AA' }} />
-                : signal.imbalance > -0.3 
-                  ? <TrendingUp size={isMobile ? 16 : 20} style={{ color: '#F59E0B' }} />
-                  : <TrendingDown size={isMobile ? 16 : 20} style={{ color: '#FF6B6B' }} />
-              }
+              <AlertTriangle size={isMobile ? 16 : 20} style={{ color: '#FF6B6B' }} />
             </div>
             <div>
-              <p style={{ fontSize: isMobile ? '11px' : '12px', color: 'rgba(255,255,255,0.3)' }}>Market Imbalance</p>
+              <p style={{ fontSize: isMobile ? '11px' : '12px', color: 'rgba(255,255,255,0.3)' }}>Squeeze Risk</p>
               <p style={{ 
                 fontSize: isMobile ? '14px' : '16px', 
                 fontWeight: 600,
-                color: signal.imbalance > 0.3 ? '#00D4AA' : signal.imbalance > -0.3 ? '#F59E0B' : '#FF6B6B'
+                color: signal.squeezeRisk > 60 ? '#FF6B6B' : signal.squeezeRisk > 30 ? '#F59E0B' : '#00D4AA'
               }}>
-                {(signal.imbalance * 100).toFixed(1)}%
+                {signal.squeezeRisk || 50}%
               </p>
             </div>
           </div>
@@ -142,7 +152,7 @@ export default function DerivativesAgent({ isMobile = false }) {
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
               <span style={{ fontSize: isMobile ? '12px' : '13px', color: 'rgba(255,255,255,0.3)' }}>Confidence</span>
-              <span style={{ fontSize: isMobile ? '12px' : '13px', fontWeight: 500 }}>{Math.round(signal.confidence * 100)}%</span>
+              <span style={{ fontSize: isMobile ? '12px' : '13px', fontWeight: 500 }}>{signal.confidence}%</span>
             </div>
             <div style={{
               width: '100%',
@@ -152,7 +162,7 @@ export default function DerivativesAgent({ isMobile = false }) {
               overflow: 'hidden'
             }}>
               <div style={{
-                width: `${signal.confidence * 100}%`,
+                width: `${signal.confidence}%`,
                 height: '100%',
                 borderRadius: '4px',
                 background: 'linear-gradient(90deg, #FF6B6B, #F87171)',
@@ -169,9 +179,25 @@ export default function DerivativesAgent({ isMobile = false }) {
             flexWrap: 'wrap',
             gap: '4px'
           }}>
-            <span>Price: ${signal.price.toFixed(4)}</span>
-            <span>Updated: {new Date(signal.timestamp).toLocaleTimeString()}</span>
+            <span>Price: ${signal.price.toFixed(2)}</span>
+            <span style={{ color: signal.change24h > 0 ? '#00D4AA' : '#FF6B6B' }}>
+              24h: {signal.change24h > 0 ? '+' : ''}{signal.change24h.toFixed(2)}%
+            </span>
+            <span>Updated: {new Date().toLocaleTimeString()}</span>
           </div>
+
+          {signal.description && (
+            <div style={{
+              fontSize: '11px',
+              color: 'rgba(255,255,255,0.3)',
+              fontStyle: 'italic',
+              padding: '8px 12px',
+              background: 'rgba(255,255,255,0.02)',
+              borderRadius: '8px'
+            }}>
+              💡 {signal.description}
+            </div>
+          )}
         </div>
       ) : (
         <div style={{ 
@@ -180,7 +206,7 @@ export default function DerivativesAgent({ isMobile = false }) {
           color: 'rgba(255,255,255,0.2)'
         }}>
           <AlertTriangle size={isMobile ? 24 : 32} style={{ margin: '0 auto 12px', opacity: 0.2 }} />
-          <p style={{ fontSize: isMobile ? '13px' : '14px' }}>Waiting for signal...</p>
+          <p style={{ fontSize: isMobile ? '13px' : '14px' }}>No signal yet</p>
         </div>
       )}
     </div>

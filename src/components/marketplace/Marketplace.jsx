@@ -1,44 +1,128 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useApp } from '../../context/AppContext'
-import { ShoppingCart, Star, Shield } from 'lucide-react'
-import { API_URL } from '../../utils/api'
+import { API_URL } from '../../utils/api'  
+import { ethers } from 'ethers'  
+import { ShoppingCart, Star, Shield, TrendingUp, TrendingDown, Loader } from 'lucide-react'
 
 export default function Marketplace({ isMobile = false, isTablet = false }) {
   const { state, dispatch } = useApp()
+  const { walletAddress } = state
   const [purchasing, setPurchasing] = useState(null)
-  const [purchaseError, setPurchaseError] = useState(null)
-  
-  const API_URL = import.meta.env.VITE_API_URL || '${API_URL}'
+  const [agentSignals, setAgentSignals] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [paymentStatus, setPaymentStatus] = useState({})
 
-  const handlePurchase = async (agentType, price) => {
-    setPurchasing(agentType)
-    setPurchaseError(null)
+  // Fetch real agent signals
+  useEffect(() => {
+    const fetchSignals = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/agent-signals`)
+        const data = await response.json()
+        if (data.success) {
+          setAgentSignals(data.signals)
+        }
+      } catch (error) {
+        console.error('Failed to fetch agent signals:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
     
+    fetchSignals()
+    const interval = setInterval(fetchSignals, 5000)
+    return () => clearInterval(interval)
+  }, [])
+
+  // x402 Purchase with BNB payment
+  const handlePurchase = async (agentType, price) => {
+    if (!walletAddress) {
+      alert('Please connect your wallet first')
+      return
+    }
+
+    setPurchasing(agentType)
+    setPaymentStatus(prev => ({ ...prev, [agentType]: { status: 'pending', message: 'Getting quote...' } }))
+
     try {
-      // Real purchase via backend
-      const response = await fetch(`${API_URL}/api/purchase-signal`, {
+      // Step 1: Get payment quote (x402)
+      const quoteResponse = await fetch(`${API_URL}/api/purchase-quote`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          agent: agentType, 
-          price: price 
+        body: JSON.stringify({ agent: agentType, price })
+      })
+      
+      const quote = await quoteResponse.json()
+      if (!quote.success) {
+        throw new Error(quote.error || 'Failed to get payment quote')
+      }
+
+      setPaymentStatus(prev => ({ 
+        ...prev, 
+        [agentType]: { status: 'pending', message: 'Send payment in wallet...' }
+      }))
+
+      // Step 2: Send BNB payment (x402 pay-per-request)
+      if (!window.ethereum) {
+        throw new Error('Please install MetaMask or Trust Wallet')
+      }
+
+      const provider = new ethers.providers.Web3Provider(window.ethereum)
+      const signer = provider.getSigner()
+      
+      const tx = await signer.sendTransaction({
+        to: quote.recipient,
+        value: ethers.utils.parseEther(price.toString())
+      })
+
+      setPaymentStatus(prev => ({ 
+        ...prev, 
+        [agentType]: { status: 'pending', message: 'Confirming payment...' }
+      }))
+
+      await tx.wait()
+      
+      // Step 3: Confirm purchase
+      const confirmResponse = await fetch(`${API_URL}/api/confirm-purchase`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agent: agentType,
+          txHash: tx.hash,
+          price: price
         })
       })
       
-      const result = await response.json()
+      const confirmData = await confirmResponse.json()
       
-      if (result.success) {
+      if (confirmData.success) {
+        setPaymentStatus(prev => ({ 
+          ...prev, 
+          [agentType]: { 
+            status: 'success', 
+            message: '✅ Purchased!',
+            txHash: tx.hash 
+          }
+        }))
+
         dispatch({
           type: 'PURCHASE_SIGNAL',
           payload: { agent: agentType, price }
         })
-        console.log(`✅ ${agentType} signal purchased: ${result.txHash}`)
+
+        console.log(`✅ ${agentType} signal purchased (x402): ${tx.hash}`)
       } else {
-        setPurchaseError(result.error || 'Purchase failed')
+        throw new Error(confirmData.error || 'Confirmation failed')
       }
+      
     } catch (error) {
       console.error('Purchase error:', error)
-      setPurchaseError(error.message || 'Failed to purchase signal')
+      setPaymentStatus(prev => ({ 
+        ...prev, 
+        [agentType]: { 
+          status: 'error', 
+          message: error.message || 'Purchase failed' 
+        }
+      }))
     } finally {
       setPurchasing(null)
     }
@@ -46,21 +130,9 @@ export default function Marketplace({ isMobile = false, isTablet = false }) {
 
   const getAgentData = (type) => {
     const data = {
-      whale: {
-        icon: '🐋',
-        gradient: 'linear-gradient(135deg, #6C3CE1, #8B5CF6)',
-        description: 'Smart Money Movement'
-      },
-      narrative: {
-        icon: '📰',
-        gradient: 'linear-gradient(135deg, #00D4AA, #34D399)',
-        description: 'Market Narrative Strength'
-      },
-      derivatives: {
-        icon: '📊',
-        gradient: 'linear-gradient(135deg, #FF6B6B, #F87171)',
-        description: 'Funding & Leverage'
-      }
+      whale: { icon: '🐋', gradient: 'linear-gradient(135deg, #6C3CE1, #8B5CF6)', description: 'Smart Money Movement' },
+      narrative: { icon: '📰', gradient: 'linear-gradient(135deg, #00D4AA, #34D399)', description: 'Market Narrative Strength' },
+      derivatives: { icon: '📊', gradient: 'linear-gradient(135deg, #FF6B6B, #F87171)', description: 'Funding & Leverage' }
     }
     return data[type]
   }
@@ -70,6 +142,9 @@ export default function Marketplace({ isMobile = false, isTablet = false }) {
     if (isTablet) return 'repeat(2, 1fr)'
     return 'repeat(3, 1fr)'
   }
+
+  const isPurchasing = (agentType) => purchasing === agentType
+  const getPaymentStatus = (agentType) => paymentStatus[agentType]
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? '16px' : '28px' }}>
@@ -91,7 +166,7 @@ export default function Marketplace({ isMobile = false, isTablet = false }) {
             Intelligence Marketplace
           </h2>
           <p style={{ fontSize: isMobile ? '13px' : '15px', color: 'rgba(255,255,255,0.4)', marginTop: '4px' }}>
-            Purchase predictive signals from specialized AI agents
+            {loading ? 'Loading live signals...' : 'x402 Pay-per-request'}
           </p>
         </div>
         <div style={{
@@ -100,17 +175,22 @@ export default function Marketplace({ isMobile = false, isTablet = false }) {
           gap: '10px',
           padding: isMobile ? '6px 14px' : '8px 18px',
           borderRadius: '100px',
-          background: 'rgba(0,212,170,0.1)',
-          border: '1px solid rgba(0,212,170,0.15)'
+          background: 'rgba(108,60,225,0.1)',
+          border: '1px solid rgba(108,60,225,0.15)'
         }}>
+          <span style={{ fontSize: isMobile ? '11px' : '13px', color: '#6C3CE1' }}>
+            ⚡ x402
+          </span>
           <div style={{
             width: isMobile ? '6px' : '8px',
             height: isMobile ? '6px' : '8px',
             borderRadius: '50%',
-            background: '#00D4AA',
-            animation: 'pulseGlow 1.5s ease-in-out infinite'
+            background: agentSignals ? '#00D4AA' : '#FF6B6B',
+            animation: agentSignals ? 'pulseGlow 1.5s ease-in-out infinite' : 'none'
           }} />
-          <span style={{ fontSize: isMobile ? '11px' : '13px', color: '#00D4AA' }}>BSC REAL</span>
+          <span style={{ fontSize: isMobile ? '11px' : '13px', color: agentSignals ? '#00D4AA' : '#FF6B6B' }}>
+            {agentSignals ? '🔴 LIVE' : '⏳ LOADING'}
+          </span>
         </div>
       </div>
 
@@ -123,7 +203,9 @@ export default function Marketplace({ isMobile = false, isTablet = false }) {
           const agent = state.agents.find(a => a.type === item.agent)
           const agentData = getAgentData(item.agent)
           const isPurchased = item.purchased
-          const isPurchasing = purchasing === item.agent
+          const isPurchasingAgent = isPurchasing(item.agent)
+          const status = getPaymentStatus(item.agent)
+          const signal = agentSignals?.[item.agent]
 
           return (
             <div
@@ -187,7 +269,8 @@ export default function Marketplace({ isMobile = false, isTablet = false }) {
                 </div>
               </div>
 
-              {agent?.signal && (
+              {/* Signal Display */}
+              {signal ? (
                 <div style={{
                   padding: isMobile ? '14px' : '18px',
                   borderRadius: '14px',
@@ -202,25 +285,51 @@ export default function Marketplace({ isMobile = false, isTablet = false }) {
                       fontWeight: 500,
                       padding: '4px 14px',
                       borderRadius: '100px',
-                      background: agent.signal.direction === 'bullish' ? 'rgba(0,212,170,0.15)' : 'rgba(255,107,107,0.15)',
-                      color: agent.signal.direction === 'bullish' ? '#00D4AA' : '#FF6B6B'
+                      background: signal.direction === 'bullish' ? 'rgba(0,212,170,0.15)' : 'rgba(255,107,107,0.15)',
+                      color: signal.direction === 'bullish' ? '#00D4AA' : '#FF6B6B',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
                     }}>
-                      {agent.signal.direction === 'bullish' ? '📈 Bullish' : '📉 Bearish'}
+                      {signal.direction === 'bullish' ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+                      {signal.direction === 'bullish' ? 'Bullish' : 'Bearish'}
                     </span>
                   </div>
-                  <div style={{ display: 'flex', gap: '32px' }}>
+                  <div style={{ display: 'flex', gap: isMobile ? '20px' : '32px', flexWrap: 'wrap' }}>
                     <div>
-                      <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.3)' }}>Confidence</p>
-                      <p style={{ fontSize: '18px', fontWeight: 600 }}>{Math.round(agent.signal.confidence * 100)}%</p>
+                      <p style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)' }}>Confidence</p>
+                      <p style={{ fontSize: '18px', fontWeight: 600 }}>{signal.confidence}%</p>
                     </div>
                     <div>
-                      <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.3)' }}>Price</p>
-                      <p style={{ fontSize: '18px', fontWeight: 600 }}>${agent.signal.price.toFixed(4)}</p>
+                      <p style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)' }}>Price</p>
+                      <p style={{ fontSize: '18px', fontWeight: 600 }}>${signal.price.toFixed(2)}</p>
                     </div>
+                    {signal.change24h !== undefined && (
+                      <div>
+                        <p style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)' }}>24h Change</p>
+                        <p style={{ fontSize: '18px', fontWeight: 600, color: signal.change24h > 0 ? '#00D4AA' : '#FF6B6B' }}>
+                          {signal.change24h > 0 ? '+' : ''}{signal.change24h.toFixed(2)}%
+                        </p>
+                      </div>
+                    )}
                   </div>
+                </div>
+              ) : (
+                <div style={{
+                  padding: isMobile ? '14px' : '18px',
+                  borderRadius: '14px',
+                  background: 'rgba(255,255,255,0.02)',
+                  border: '1px solid rgba(255,255,255,0.04)',
+                  marginBottom: '24px',
+                  textAlign: 'center',
+                  color: 'rgba(255,255,255,0.2)',
+                  fontSize: '13px'
+                }}>
+                  ⏳ Loading signal...
                 </div>
               )}
 
+              {/* Stats */}
               <div style={{ marginBottom: '24px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                   <span style={{ fontSize: '14px', color: 'rgba(255,255,255,0.3)' }}>Trust Score</span>
@@ -247,9 +356,10 @@ export default function Marketplace({ isMobile = false, isTablet = false }) {
                 </div>
               </div>
 
+              {/* Purchase Button with x402 */}
               <button
                 onClick={() => handlePurchase(item.agent, item.price)}
-                disabled={isPurchased || isPurchasing}
+                disabled={isPurchased || isPurchasingAgent || !walletAddress}
                 style={{
                   width: '100%',
                   padding: '14px',
@@ -257,13 +367,15 @@ export default function Marketplace({ isMobile = false, isTablet = false }) {
                   fontSize: '15px',
                   fontWeight: 600,
                   border: 'none',
-                  cursor: isPurchased || isPurchasing ? 'default' : 'pointer',
+                  cursor: (isPurchased || isPurchasingAgent || !walletAddress) ? 'default' : 'pointer',
                   background: isPurchased 
                     ? 'rgba(0,212,170,0.1)' 
-                    : isPurchasing
+                    : isPurchasingAgent
                       ? 'rgba(255,255,255,0.05)'
-                      : 'linear-gradient(135deg, #6C3CE1, #00D4AA)',
-                  color: isPurchased ? '#00D4AA' : isPurchasing ? 'rgba(255,255,255,0.3)' : '#FFFFFF',
+                      : !walletAddress
+                        ? 'rgba(255,255,255,0.03)'
+                        : 'linear-gradient(135deg, #6C3CE1, #00D4AA)',
+                  color: isPurchased ? '#00D4AA' : isPurchasingAgent ? 'rgba(255,255,255,0.3)' : !walletAddress ? 'rgba(255,255,255,0.2)' : '#FFFFFF',
                   transition: 'all 0.3s ease',
                   display: 'flex',
                   alignItems: 'center',
@@ -276,41 +388,65 @@ export default function Marketplace({ isMobile = false, isTablet = false }) {
                     <Shield size={18} />
                     Signal Purchased ✓
                   </>
-                ) : isPurchasing ? (
+                ) : isPurchasingAgent ? (
                   <>
-                    <div style={{
-                      width: '18px',
-                      height: '18px',
-                      border: '2px solid rgba(255,255,255,0.2)',
-                      borderTop: '2px solid #6C3CE1',
-                      borderRadius: '50%',
-                      animation: 'spin 0.8s linear infinite'
-                    }} />
-                    Processing on BSC...
+                    <Loader size={18} className="animate-spin-slow" />
+                    {status?.message || 'Processing x402...'}
+                  </>
+                ) : !walletAddress ? (
+                  <>
+                    <span>🔒 Connect Wallet</span>
                   </>
                 ) : (
                   <>
                     <ShoppingCart size={18} />
-                    Purchase Signal (BSC)
+                    Purchase {item.price} BNB (x402)
                   </>
                 )}
               </button>
 
-              {purchaseError && (
+              {/* Payment Status */}
+              {status && status.status !== 'success' && (
                 <div style={{
                   marginTop: '12px',
                   padding: '8px',
                   borderRadius: '8px',
-                  background: 'rgba(255,107,107,0.1)',
-                  border: '1px solid rgba(255,107,107,0.15)',
+                  background: status.status === 'error' ? 'rgba(255,107,107,0.1)' : 'rgba(0,212,170,0.1)',
+                  border: `1px solid ${status.status === 'error' ? 'rgba(255,107,107,0.15)' : 'rgba(0,212,170,0.15)'}`,
                   fontSize: '11px',
-                  color: '#FF6B6B'
+                  color: status.status === 'error' ? '#FF6B6B' : '#00D4AA'
                 }}>
-                  ❌ {purchaseError}
+                  {status.status === 'error' ? (
+                    <>❌ {status.message}</>
+                  ) : (
+                    <>⏳ {status.message}</>
+                  )}
                 </div>
               )}
 
-              {isPurchased && (
+              {status?.status === 'success' && (
+                <div style={{
+                  marginTop: '12px',
+                  padding: '8px',
+                  borderRadius: '8px',
+                  background: 'rgba(0,212,170,0.1)',
+                  border: '1px solid rgba(0,212,170,0.15)',
+                  fontSize: '11px',
+                  color: '#00D4AA'
+                }}>
+                  ✅ {status.message}
+                  {status.txHash && (
+                    <br />
+                   {status.txHash && (
+  <span style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)' }}>
+    Tx: {status.txHash.slice(0, 20)}...{status.txHash.slice(-10)}
+  </span>
+)}
+                  )}
+                </div>
+              )}
+
+              {isPurchased && !status?.status && (
                 <div style={{
                   marginTop: '12px',
                   textAlign: 'center',

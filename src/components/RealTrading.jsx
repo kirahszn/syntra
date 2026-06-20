@@ -1,4 +1,3 @@
-// src/components/RealTrading.jsx
 import React, { useState, useEffect } from 'react'
 import { useApp } from '../context/AppContext'
 import { API_URL } from '../utils/api'
@@ -6,36 +5,66 @@ import { ethers } from 'ethers'
 import { DollarSign, TrendingUp, TrendingDown, AlertTriangle, Shield, RefreshCw } from 'lucide-react'
 
 export default function RealTrading({ isMobile = false }) {
-  const { state } = useApp()
-  const { walletAddress } = state // Get connected user's address
+  const { state, dispatch } = useApp()
+  const { walletAddress } = state
   const [balance, setBalance] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [tradeResult, setTradeResult] = useState(null)
+  const [pendingTrade, setPendingTrade] = useState(null)
 
-  // Fetch user's balance
+  // Get purchased agents
+  const getPurchasedAgents = () => {
+    return state.marketplace
+      .filter(item => item.purchased)
+      .map(item => item.agent)
+  }
+
+  // Fetch balance
   const fetchBalance = async () => {
     if (!walletAddress) return
-    
     try {
       const response = await fetch(`${API_URL}/api/balance?address=${walletAddress}`)
       const data = await response.json()
-      if (data.success) {
-        setBalance(data.balance)
-      }
+      if (data.success) setBalance(data.balance)
     } catch (error) {
       console.error('Failed to fetch balance:', error)
     }
   }
 
+  // Check for pending trades with purchased agents
+  const checkPendingTrade = async () => {
+    try {
+      const purchased = getPurchasedAgents()
+      const response = await fetch(`${API_URL}/api/decision?purchased=${purchased.join(',')}`)
+      const data = await response.json()
+      if (data.success && data.pendingTrade) {
+        setPendingTrade(data.pendingTrade)
+        console.log('📊 Pending trade ready for signing:', data.pendingTrade)
+      }
+    } catch (error) {
+      console.error('Failed to check pending trade:', error)
+    }
+  }
+
   useEffect(() => {
     fetchBalance()
-    const interval = setInterval(fetchBalance, 5000)
-    return () => clearInterval(interval)
-  }, [walletAddress])
+    checkPendingTrade()
+    const balanceInterval = setInterval(fetchBalance, 5000)
+    const tradeInterval = setInterval(checkPendingTrade, 3000)
+    return () => {
+      clearInterval(balanceInterval)
+      clearInterval(tradeInterval)
+    }
+  }, [walletAddress, state.marketplace])
 
-  // Execute trade with USER's wallet
-  const executeTrade = async (decision, amount) => {
+  // AUTO-EXECUTE TRADE (User just signs)
+  const executePendingTrade = async () => {
+    if (!pendingTrade || !walletAddress) {
+      setError('No trade to execute or wallet not connected')
+      return
+    }
+
     if (!window.ethereum) {
       setError('Please install MetaMask or Trust Wallet')
       return
@@ -46,40 +75,30 @@ export default function RealTrading({ isMobile = false }) {
     setTradeResult(null)
 
     try {
-      // Get trade parameters from backend
-      const paramsRes = await fetch(`${API_URL}/api/trade-params`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          decision, 
-          conviction: 80, 
-          amount: amount || 0.001 
-        })
-      })
-      const paramsData = await paramsRes.json()
-      
-      if (!paramsData.success) {
-        throw new Error(paramsData.error || 'Failed to get trade params')
-      }
-
-      // Execute swap in browser using user's wallet
       const provider = new ethers.providers.Web3Provider(window.ethereum)
       const signer = provider.getSigner()
       
       const router = new ethers.Contract(
-        paramsData.tradeParams.routerAddress,
+        pendingTrade.routerAddress,
         [
           'function swapExactETHForTokens(uint amountOutMin, address[] path, address to, uint deadline) external payable returns (uint[])'
         ],
         signer
       )
 
-      const amountIn = ethers.utils.parseEther(paramsData.tradeParams.amount.toString())
+      const amountIn = ethers.BigNumber.from(pendingTrade.amountIn)
+      
+      console.log('📈 Executing trade with params:', {
+        amount: ethers.utils.formatEther(amountIn),
+        path: pendingTrade.path,
+        deadline: pendingTrade.deadline
+      })
+
       const tx = await router.swapExactETHForTokens(
         0, // amountOutMin
-        paramsData.tradeParams.path,
+        pendingTrade.path,
         walletAddress,
-        paramsData.tradeParams.deadline,
+        pendingTrade.deadline,
         { value: amountIn, gasLimit: 300000 }
       )
 
@@ -88,19 +107,32 @@ export default function RealTrading({ isMobile = false }) {
       setTradeResult({
         success: true,
         txHash: receipt.transactionHash,
-        price: paramsData.tradeParams.price,
-        amount: paramsData.tradeParams.amount
+        price: pendingTrade.price,
+        amount: ethers.utils.formatEther(amountIn)
       })
       
+      setPendingTrade(null)
       await fetchBalance()
       
+      // Dispatch to AppContext
+      dispatch({
+        type: 'UPDATE_TRADE_RESULT',
+        payload: {
+          result: 'EXECUTED',
+          txHash: receipt.transactionHash,
+          price: pendingTrade.price
+        }
+      })
+      
     } catch (error) {
-      console.error('Trade error:', error)
+      console.error('Trade execution error:', error)
       setError(error.message || 'Trade failed')
     } finally {
       setLoading(false)
     }
   }
+
+  const purchasedCount = getPurchasedAgents().length
 
   return (
     <div style={{
@@ -124,25 +156,36 @@ export default function RealTrading({ isMobile = false }) {
             <DollarSign size={24} style={{ color: '#00D4AA' }} />
           </div>
           <div>
-            <h3 style={{ fontSize: '18px', fontWeight: 600 }}>Manual Trading</h3>
+            <h3 style={{ fontSize: '18px', fontWeight: 600 }}>Trade Execution</h3>
             <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.4)' }}>
-              {walletAddress ? 'Execute trades from your wallet' : 'Connect wallet to trade'}
+              {pendingTrade ? '⚠️ Trade ready to sign' : 'Waiting for AI signal...'}
             </p>
           </div>
         </div>
-        <button
-          onClick={fetchBalance}
-          style={{
-            padding: '8px',
-            borderRadius: '10px',
-            background: 'rgba(255,255,255,0.03)',
-            border: '1px solid rgba(255,255,255,0.06)',
-            cursor: 'pointer',
-            color: 'rgba(255,255,255,0.4)'
-          }}
-        >
-          <RefreshCw size={16} />
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{
+            fontSize: '11px',
+            padding: '4px 10px',
+            borderRadius: '100px',
+            background: purchasedCount > 0 ? 'rgba(0,212,170,0.1)' : 'rgba(255,255,255,0.05)',
+            color: purchasedCount > 0 ? '#00D4AA' : 'rgba(255,255,255,0.3)'
+          }}>
+            {purchasedCount > 0 ? `✅ ${purchasedCount}/3 agents` : '⚠️ No agents'}
+          </span>
+          <button
+            onClick={() => { fetchBalance(); checkPendingTrade(); }}
+            style={{
+              padding: '8px',
+              borderRadius: '10px',
+              background: 'rgba(255,255,255,0.03)',
+              border: '1px solid rgba(255,255,255,0.06)',
+              cursor: 'pointer',
+              color: 'rgba(255,255,255,0.4)'
+            }}
+          >
+            <RefreshCw size={16} />
+          </button>
+        </div>
       </div>
 
       {balance !== null && (
@@ -157,41 +200,37 @@ export default function RealTrading({ isMobile = false }) {
           <p style={{ fontSize: '24px', fontWeight: 700, color: '#00D4AA' }}>
             {balance.toFixed(4)} BNB
           </p>
-          {walletAddress && (
-            <p style={{ fontSize: '10px', color: 'rgba(255,255,255,0.2)', fontFamily: 'monospace' }}>
-              {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
-            </p>
-          )}
         </div>
       )}
 
-      {state.currentTrade && (
+      {pendingTrade && (
         <div style={{
           padding: '16px',
           borderRadius: '14px',
-          background: state.currentTrade.decision === 'BUY' 
-            ? 'rgba(0,212,170,0.05)' 
-            : 'rgba(255,107,107,0.05)',
-          border: `1px solid ${state.currentTrade.decision === 'BUY' 
-            ? 'rgba(0,212,170,0.1)' 
-            : 'rgba(255,107,107,0.1)'}`,
+          background: 'rgba(0,212,170,0.05)',
+          border: '1px solid rgba(0,212,170,0.2)',
           marginBottom: '16px'
         }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h4 style={{ fontSize: '14px', color: '#00D4AA', marginBottom: '8px' }}>
+            🚀 AI Trade Ready
+          </h4>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <div>
-              <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.3)' }}>AI Decision</p>
-              <p style={{ 
-                fontSize: '24px', 
-                fontWeight: 700,
-                color: state.currentTrade.decision === 'BUY' ? '#00D4AA' : '#FF6B6B'
-              }}>
-                {state.currentTrade.decision}
+              <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.3)' }}>Action</p>
+              <p style={{ fontSize: '18px', fontWeight: 700, color: '#00D4AA' }}>
+                BUY
               </p>
             </div>
-            <div style={{ textAlign: 'right' }}>
-              <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.3)' }}>Conviction</p>
-              <p style={{ fontSize: '24px', fontWeight: 700 }}>
-                {Math.round(state.currentTrade.conviction)}%
+            <div>
+              <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.3)' }}>Amount</p>
+              <p style={{ fontSize: '18px', fontWeight: 700 }}>
+                {ethers.utils.formatEther(pendingTrade.amountIn)} BNB
+              </p>
+            </div>
+            <div>
+              <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.3)' }}>Price</p>
+              <p style={{ fontSize: '18px', fontWeight: 700 }}>
+                ${pendingTrade.price.toFixed(2)}
               </p>
             </div>
           </div>
@@ -199,8 +238,8 @@ export default function RealTrading({ isMobile = false }) {
       )}
 
       <button
-        onClick={() => executeTrade(state.currentTrade?.decision || 'BUY', 0.001)}
-        disabled={!walletAddress || loading || state.currentTrade?.decision === 'NO BUY'}
+        onClick={executePendingTrade}
+        disabled={!walletAddress || loading || !pendingTrade}
         style={{
           width: '100%',
           padding: '14px',
@@ -208,21 +247,21 @@ export default function RealTrading({ isMobile = false }) {
           fontSize: '16px',
           fontWeight: 600,
           border: 'none',
-          cursor: (!walletAddress || loading || state.currentTrade?.decision === 'NO BUY') 
+          cursor: (!walletAddress || loading || !pendingTrade) 
             ? 'default' 
             : 'pointer',
-          background: (!walletAddress || loading || state.currentTrade?.decision === 'NO BUY')
+          background: (!walletAddress || loading || !pendingTrade)
             ? 'rgba(255,255,255,0.05)'
             : 'linear-gradient(135deg, #6C3CE1, #00D4AA)',
-          color: (!walletAddress || loading || state.currentTrade?.decision === 'NO BUY')
+          color: (!walletAddress || loading || !pendingTrade)
             ? 'rgba(255,255,255,0.3)'
             : 'white'
         }}
       >
         {!walletAddress ? 'Connect Wallet First' :
-         loading ? 'Executing...' : 
-         state.currentTrade?.decision === 'NO BUY' ? 'No Trade Signal' :
-         `Execute Trade (${state.currentTrade?.decision || 'BUY'})`}
+         loading ? '⏳ Sign in Wallet...' : 
+         !pendingTrade ? '⏳ Waiting for AI Signal...' :
+         '✅ Confirm Trade in Wallet'}
       </button>
 
       {tradeResult && (
@@ -235,20 +274,11 @@ export default function RealTrading({ isMobile = false }) {
           fontSize: '13px',
           color: 'rgba(255,255,255,0.7)'
         }}>
-          ✅ Trade executed!
+          ✅ Trade Executed!
           <br />
           <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.3)' }}>
             Tx: {tradeResult.txHash.slice(0, 20)}...{tradeResult.txHash.slice(-10)}
           </span>
-          <br />
-          <a
-            href={`https://bscscan.com/tx/${tradeResult.txHash}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ fontSize: '11px', color: '#6C3CE1' }}
-          >
-            View on BSCScan →
-          </a>
         </div>
       )}
 
@@ -277,8 +307,12 @@ export default function RealTrading({ isMobile = false }) {
         color: 'rgba(255,255,255,0.4)'
       }}>
         <Shield size={14} style={{ display: 'inline', marginRight: '8px' }} />
-        🔴 You control your funds. AI suggests trades, you approve in your wallet.
-        {walletAddress && <span style={{ color: '#00D4AA', marginLeft: '8px' }}>✅ Connected</span>}
+        {purchasedCount > 0 ? (
+          `🔴 Using ${purchasedCount}/3 purchased agents for decisions`
+        ) : (
+          '⚠️ No agents purchased - buy signals in Marketplace'
+        )}
+        {pendingTrade && <span style={{ color: '#00D4AA', marginLeft: '8px' }}>✅ Trade Pending</span>}
       </div>
     </div>
   )
