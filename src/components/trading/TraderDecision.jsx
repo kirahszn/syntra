@@ -1,17 +1,16 @@
 import React, { useState, useEffect } from 'react'
 import { useApp } from '../../context/AppContext'
-import { Brain, Zap, ArrowRight, Clock, Play, Square } from 'lucide-react'
 import { API_URL } from '../../utils/api'
+import { Brain, Zap, ArrowRight, Clock, Play, Square } from 'lucide-react'
 
 export default function TraderDecision({ isMobile = false }) {
-  const { state } = useApp()
+  const { state, dispatch } = useApp()
   const [showDetails, setShowDetails] = useState(false)
   const [isAutoTrading, setIsAutoTrading] = useState(false)
   const [autoStatus, setAutoStatus] = useState('Idle')
-  const [realTrade, setRealTrade] = useState(null)
-  const trade = state.currentTrade
+  const [currentDecision, setCurrentDecision] = useState(null)
 
-  // Check auto-trade status
+  // Check auto-trade status and get decisions
   useEffect(() => {
     const checkStatus = async () => {
       try {
@@ -20,18 +19,46 @@ export default function TraderDecision({ isMobile = false }) {
         if (data.success) {
           setIsAutoTrading(data.isAutoTrading || false)
           setAutoStatus(data.isAutoTrading ? '🟢 Running' : '⚪ Idle')
-          if (data.trades && data.trades.length > 0) {
-            setRealTrade(data.trades[0])
-          }
         }
       } catch (error) {
         console.error('Failed to check status:', error)
       }
     }
+
+    const getDecision = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/decision`)
+        const data = await response.json()
+        if (data.success && data.decision) {
+          setCurrentDecision(data.decision)
+          // Update AppContext with the decision
+          dispatch({
+            type: 'UPDATE_TRADE',
+            payload: {
+              currentTrade: {
+                decision: data.decision.decision,
+                conviction: data.decision.conviction,
+                price: data.decision.price
+              }
+            }
+          })
+        }
+      } catch (error) {
+        console.error('Failed to get decision:', error)
+      }
+    }
+    
     checkStatus()
-    const interval = setInterval(checkStatus, 3000)
-    return () => clearInterval(interval)
-  }, [API_URL])
+    getDecision()
+    
+    const statusInterval = setInterval(checkStatus, 3000)
+    const decisionInterval = setInterval(getDecision, 5000)
+    
+    return () => {
+      clearInterval(statusInterval)
+      clearInterval(decisionInterval)
+    }
+  }, [dispatch])
 
   const startAutoTrade = async () => {
     try {
@@ -68,6 +95,8 @@ export default function TraderDecision({ isMobile = false }) {
       alert('Failed to stop auto trading')
     }
   }
+
+  const decision = currentDecision || state.currentTrade
 
   return (
     <div style={{
@@ -107,7 +136,7 @@ export default function TraderDecision({ isMobile = false }) {
               fontSize: isMobile ? '11px' : '12px', 
               color: isAutoTrading ? '#00D4AA' : 'rgba(255,255,255,0.4)'
             }}>
-              {isAutoTrading ? '🟢 Auto-trading enabled' : '⚪ Auto-trading disabled'}
+              {isAutoTrading ? '🟢 Generating signals' : '⚪ Auto-trading disabled'}
             </p>
           </div>
         </div>
@@ -180,7 +209,7 @@ export default function TraderDecision({ isMobile = false }) {
         </div>
       </div>
 
-      {/* Rest of the component remains the same */}
+      {/* Status Info */}
       <div style={{
         padding: '12px 16px',
         borderRadius: '12px',
@@ -195,25 +224,29 @@ export default function TraderDecision({ isMobile = false }) {
       }}>
         <span style={{ color: 'rgba(255,255,255,0.4)' }}>
           {isAutoTrading 
-            ? '🤖 AI is actively trading on BSC' 
+            ? '🤖 AI is generating trading signals' 
             : '⏸️ AI is paused'}
         </span>
         <span style={{ 
           color: isAutoTrading ? '#00D4AA' : 'rgba(255,255,255,0.3)',
           fontFamily: 'monospace'
         }}>
-          {isAutoTrading ? '🔴 REAL BSC' : '⚪ IDLE'}
+          {isAutoTrading ? '🔴 SIGNAL GENERATOR' : '⚪ IDLE'}
         </span>
       </div>
 
       {/* AI Decision Display */}
-      {realTrade || trade ? (
+      {decision ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? '12px' : '16px' }}>
           <div style={{
             padding: isMobile ? '16px' : '20px',
             borderRadius: '14px',
-            background: 'rgba(255,255,255,0.03)',
-            border: '1px solid rgba(255,255,255,0.04)',
+            background: decision.decision === 'BUY' 
+              ? 'rgba(0,212,170,0.05)' 
+              : 'rgba(255,107,107,0.05)',
+            border: `1px solid ${decision.decision === 'BUY' 
+              ? 'rgba(0,212,170,0.1)' 
+              : 'rgba(255,107,107,0.1)'}`,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -221,148 +254,58 @@ export default function TraderDecision({ isMobile = false }) {
             gap: '12px'
           }}>
             <div>
-              <p style={{ fontSize: isMobile ? '11px' : '13px', color: 'rgba(255,255,255,0.3)' }}>
-                {realTrade ? 'REAL Trade Result' : 'Conviction Score'}
+              <p style={{ 
+                fontSize: isMobile ? '11px' : '13px', 
+                color: 'rgba(255,255,255,0.3)' 
+              }}>
+                AI Signal
               </p>
               <p style={{ 
                 fontSize: isMobile ? '28px' : '32px', 
                 fontWeight: 700, 
                 letterSpacing: '-0.5px',
-                color: realTrade?.pnl > 0 ? '#00D4AA' : realTrade?.pnl < 0 ? '#FF6B6B' : 'white'
+                color: decision.decision === 'BUY' ? '#00D4AA' : '#FF6B6B'
               }}>
-                {realTrade ? `$${realTrade.pnl?.toFixed(2)}` : `${Math.round(trade?.conviction || 0)}%`}
+                {decision.decision}
               </p>
             </div>
-            <div style={{
-              padding: isMobile ? '6px 16px' : '8px 20px',
-              borderRadius: '12px',
-              fontSize: isMobile ? '13px' : '15px',
-              fontWeight: 600,
-              background: realTrade?.pnl > 0 
-                ? 'rgba(0,212,170,0.1)' 
-                : realTrade?.pnl < 0
-                  ? 'rgba(255,107,107,0.1)'
-                  : 'rgba(255,255,255,0.05)',
-              color: realTrade?.pnl > 0 ? '#00D4AA' : realTrade?.pnl < 0 ? '#FF6B6B' : 'rgba(255,255,255,0.5)'
-            }}>
-              {realTrade ? (realTrade.pnl > 0 ? '✅ PROFIT' : realTrade.pnl < 0 ? '❌ LOSS' : 'HOLD') : trade?.decision || 'WAITING'}
+            <div style={{ textAlign: 'right' }}>
+              <p style={{ fontSize: isMobile ? '11px' : '13px', color: 'rgba(255,255,255,0.3)' }}>
+                Conviction
+              </p>
+              <p style={{ fontSize: isMobile ? '28px' : '32px', fontWeight: 700 }}>
+                {Math.round(decision.conviction || 0)}%
+              </p>
             </div>
           </div>
 
-          {realTrade && (
-            <div style={{ 
-              display: 'grid', 
-              gridTemplateColumns: isMobile ? '1fr 1fr' : '1fr 1fr', 
-              gap: isMobile ? '10px' : '12px' 
-            }}>
-              <div style={{
-                padding: isMobile ? '12px' : '14px',
-                borderRadius: '12px',
-                background: 'rgba(255,255,255,0.03)',
-                border: '1px solid rgba(255,255,255,0.04)'
-              }}>
-                <p style={{ fontSize: isMobile ? '10px' : '12px', color: 'rgba(255,255,255,0.3)' }}>
-                  Entry Price
-                </p>
-                <p style={{ fontSize: isMobile ? '16px' : '18px', fontWeight: 600, color: 'white' }}>
-                  ${realTrade.entryPrice?.toFixed(2) || '—'}
-                </p>
-              </div>
-              <div style={{
-                padding: isMobile ? '12px' : '14px',
-                borderRadius: '12px',
-                background: 'rgba(255,255,255,0.03)',
-                border: '1px solid rgba(255,255,255,0.04)'
-              }}>
-                <p style={{ fontSize: isMobile ? '10px' : '12px', color: 'rgba(255,255,255,0.3)' }}>
-                  Exit Price
-                </p>
-                <p style={{ fontSize: isMobile ? '16px' : '18px', fontWeight: 600, color: 'white' }}>
-                  ${realTrade.exitPrice?.toFixed(2) || '—'}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {realTrade?.txHash && (
+          {decision.price && (
             <div style={{
               padding: isMobile ? '12px' : '14px',
               borderRadius: '12px',
               background: 'rgba(255,255,255,0.02)',
               border: '1px solid rgba(255,255,255,0.04)'
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                <span style={{ fontSize: isMobile ? '10px' : '12px', color: 'rgba(255,255,255,0.3)' }}>
-                  🔴 REAL BSC Transaction
-                </span>
-              </div>
-              <p style={{
-                fontSize: isMobile ? '10px' : '12px',
-                fontFamily: 'monospace',
-                color: '#00D4AA',
-                wordBreak: 'break-all'
-              }}>
-                {realTrade.txHash.slice(0, 20)}...{realTrade.txHash.slice(-10)}
+              <p style={{ fontSize: isMobile ? '10px' : '12px', color: 'rgba(255,255,255,0.3)' }}>
+                Price at signal
+              </p>
+              <p style={{ fontSize: isMobile ? '16px' : '18px', fontWeight: 600, color: 'white' }}>
+                ${decision.price.toFixed(2)}
               </p>
             </div>
           )}
 
-          <button
-            onClick={() => setShowDetails(!showDetails)}
-            style={{
-              padding: isMobile ? '8px' : '10px',
-              borderRadius: '12px',
-              fontSize: isMobile ? '12px' : '13px',
-              color: 'rgba(255,255,255,0.3)',
-              background: 'rgba(255,255,255,0.03)',
-              border: '1px solid rgba(255,255,255,0.04)',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px'
-            }}
-          >
-            {showDetails ? 'Hide' : 'Show'} Trade Details
-            <ArrowRight size={isMobile ? 14 : 16} style={{ 
-              transform: showDetails ? 'rotate(90deg)' : 'rotate(0deg)',
-              transition: 'transform 0.3s ease'
-            }} />
-          </button>
-
-          {showDetails && (
-            <div style={{
-              maxHeight: isMobile ? '140px' : '160px',
-              overflowY: 'auto',
-              padding: '4px'
-            }}>
-              <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                padding: '8px 12px',
-                borderRadius: '10px',
-                background: 'rgba(255,255,255,0.02)',
-                marginBottom: '4px',
-                fontSize: isMobile ? '12px' : '13px'
-              }}>
-                <span style={{ color: 'rgba(255,255,255,0.4)' }}>Amount</span>
-                <span style={{ color: 'white' }}>{realTrade?.amount || '—'} BNB</span>
-              </div>
-              <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                padding: '8px 12px',
-                borderRadius: '10px',
-                background: 'rgba(255,255,255,0.02)',
-                fontSize: isMobile ? '12px' : '13px'
-              }}>
-                <span style={{ color: 'rgba(255,255,255,0.4)' }}>P&L</span>
-                <span style={{ color: realTrade?.pnl > 0 ? '#00D4AA' : '#FF6B6B' }}>
-                  ${realTrade?.pnl?.toFixed(2) || '0.00'}
-                </span>
-              </div>
-            </div>
-          )}
+          <div style={{
+            padding: isMobile ? '10px' : '12px',
+            borderRadius: '10px',
+            background: 'rgba(255,255,255,0.03)',
+            border: '1px solid rgba(255,255,255,0.04)',
+            fontSize: isMobile ? '11px' : '12px',
+            color: 'rgba(255,255,255,0.3)',
+            textAlign: 'center'
+          }}>
+            💡 Go to <strong>"Manual Trading"</strong> tab to execute this trade from your wallet
+          </div>
         </div>
       ) : (
         <div style={{ 
@@ -375,7 +318,7 @@ export default function TraderDecision({ isMobile = false }) {
             Waiting for AI signals...
           </p>
           <p style={{ fontSize: isMobile ? '12px' : '13px', marginTop: '6px', color: 'rgba(255,255,255,0.2)' }}>
-            Click "Start Auto" to begin AI trading
+            Click "Start Auto" to begin AI signal generation
           </p>
         </div>
       )}

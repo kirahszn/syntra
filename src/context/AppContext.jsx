@@ -29,6 +29,8 @@ const loadState = () => {
         tradeCount: parsed.tradeCount || 0,
         winCount: parsed.winCount || 0,
         walletConnected: parsed.walletConnected || false,
+        walletConnected: false,
+walletAddress: null,
         walletAddress: parsed.walletAddress || null
       }
     }
@@ -43,6 +45,20 @@ const initialState = loadState()
 function appReducer(state, action) {
   let newState
   switch (action.type) {
+ case 'SET_WALLET':
+  return { 
+    ...state, 
+    walletConnected: action.payload.connected,
+    walletAddress: action.payload.address 
+  }
+
+  case 'UPDATE_TRADE':
+  return { 
+    ...state, 
+    currentTrade: action.payload.currentTrade 
+  }
+  
+
     case 'UPDATE_SIGNALS':
       const newSignals = action.payload
       let updatedState = { ...state }
@@ -73,13 +89,6 @@ function appReducer(state, action) {
       newState = { ...state, loading: action.payload }
       break
 
-    case 'SET_WALLET':
-      newState = { 
-        ...state, 
-        walletConnected: action.payload.connected,
-        walletAddress: action.payload.address 
-      }
-      break
 
     case 'CLEAR_HISTORY':
       newState = {
@@ -92,6 +101,7 @@ function appReducer(state, action) {
         walletAddress: state.walletAddress
       }
       break
+     
 
     default:
       newState = state

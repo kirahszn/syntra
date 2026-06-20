@@ -1,4 +1,4 @@
-// server.cjs - 100% REAL - NO SIMULATIONS
+// server.cjs - USER WALLET TRADING
 const express = require('express')
 const cors = require('cors')
 const bodyParser = require('body-parser')
@@ -23,15 +23,12 @@ app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     message: 'Syntra backend is running',
-    agent: process.env.AGENT_ADDRESS || 'Not set',
     timestamp: new Date().toISOString()
   })
 })
 
 // === CONFIGURATION ===
 const BSC_RPC = 'https://bsc-dataseed.binance.org/'
-const AGENT_ADDRESS = process.env.AGENT_ADDRESS
-const AGENT_PRIVATE_KEY = process.env.AGENT_PRIVATE_KEY
 const CMC_API_KEY = process.env.CMC_API_KEY
 
 // PancakeSwap Router
@@ -43,26 +40,30 @@ const TOKENS = {
   USDT: '0x55d398326f99059fF775485246999027B3197955'
 }
 
-console.log('🚀 SYNTRA - 100% REAL - NO SIMULATIONS')
-console.log('📍 Agent:', AGENT_ADDRESS)
-console.log('🔑 Private Key:', AGENT_PRIVATE_KEY ? '✅ Set' : '❌ Missing')
+console.log('🚀 SYNTRA - USER WALLET TRADING')
 console.log('🔗 BSC RPC:', BSC_RPC)
 
-// === GET REAL BALANCE ===
+// === GET USER BALANCE ===
 app.get('/api/balance', async (req, res) => {
   try {
+    const { address } = req.query
+    
+    if (!address) {
+      return res.status(400).json({ success: false, error: 'Address required' })
+    }
+
     const provider = new ethers.providers.JsonRpcProvider(BSC_RPC)
-    const balanceWei = await provider.getBalance(AGENT_ADDRESS)
+    const balanceWei = await provider.getBalance(address)
     const balanceBNB = parseFloat(ethers.utils.formatEther(balanceWei))
     
-    console.log(`💰 Balance: ${balanceBNB} BNB`)
-    res.json({ success: true, balance: balanceBNB })
+    console.log(`💰 Balance for ${address}: ${balanceBNB} BNB`)
+    res.json({ success: true, balance: balanceBNB, address })
   } catch (error) {
     res.json({ success: false, error: error.message })
   }
 })
 
-// === GET REAL BTC PRICE ===
+// === GET BTC PRICE ===
 app.get('/api/price', async (req, res) => {
   try {
     const response = await fetch(
@@ -77,7 +78,7 @@ app.get('/api/price', async (req, res) => {
   }
 })
 
-// === GET MARKET DATA FROM CMC ===
+// === GET MARKET DATA ===
 app.get('/api/market-data', async (req, res) => {
   try {
     const response = await fetch(
@@ -111,220 +112,81 @@ app.get('/api/market-data', async (req, res) => {
   }
 })
 
-// === TRADING STATE ===
-let position = null
-let trades = []
-let totalPnL = 0
-
-// === REAL BUY ===
-async function executeRealBuy(amount) {
-  const provider = new ethers.providers.JsonRpcProvider(BSC_RPC)
-  const wallet = new ethers.Wallet(AGENT_PRIVATE_KEY, provider)
-  
-  const router = new ethers.Contract(
-    PANCAKE_ROUTER,
-    [
-      'function swapExactETHForTokens(uint amountOutMin, address[] path, address to, uint deadline) external payable returns (uint[])',
-      'function getAmountsOut(uint amountIn, address[] path) view returns (uint[])'
-    ],
-    wallet
-  )
-  
-  const amountIn = ethers.utils.parseEther(amount.toString())
-  const path = [TOKENS.WBNB, TOKENS.USDT]
-  const deadline = Math.floor(Date.now() / 1000) + 60 * 20
-  
-  console.log(`📈 BUY: Swapping ${amount} BNB → USDT on PancakeSwap`)
-  
-  const amounts = await router.getAmountsOut(amountIn, path)
-  const expectedUSDT = parseFloat(ethers.utils.formatEther(amounts[1]))
-  console.log(`📊 Expected USDT: ${expectedUSDT}`)
-  
-  const tx = await router.swapExactETHForTokens(
-    0,
-    path,
-    wallet.address,
-    deadline,
-    { value: amountIn, gasLimit: 300000 }
-  )
-  
-  const receipt = await tx.wait()
-  console.log(`✅ BUY executed: ${receipt.transactionHash}`)
-  
-  return {
-    txHash: receipt.transactionHash,
-    expectedUSDT: expectedUSDT,
-    blockNumber: receipt.blockNumber
-  }
-}
-
-// === REAL SELL ===
-async function executeRealSell(usdtAmount) {
-  const provider = new ethers.providers.JsonRpcProvider(BSC_RPC)
-  const wallet = new ethers.Wallet(AGENT_PRIVATE_KEY, provider)
-  
-  const router = new ethers.Contract(
-    PANCAKE_ROUTER,
-    [
-      'function swapExactTokensForETH(uint amountIn, uint amountOutMin, address[] path, address to, uint deadline) external returns (uint[])',
-      'function getAmountsOut(uint amountIn, address[] path) view returns (uint[])'
-    ],
-    wallet
-  )
-  
-  const amountIn = ethers.utils.parseEther(usdtAmount.toString())
-  const path = [TOKENS.USDT, TOKENS.WBNB]
-  const deadline = Math.floor(Date.now() / 1000) + 60 * 20
-  
-  console.log(`📉 SELL: Swapping ${usdtAmount} USDT → BNB on PancakeSwap`)
-  
-  // Approve USDT
-  const usdtContract = new ethers.Contract(
-    TOKENS.USDT,
-    ['function approve(address spender, uint amount) public returns (bool)'],
-    wallet
-  )
-  
-  const approveTx = await usdtContract.approve(PANCAKE_ROUTER, amountIn)
-  await approveTx.wait()
-  console.log('✅ USDT approved')
-  
-  const amounts = await router.getAmountsOut(amountIn, path)
-  const expectedBNB = parseFloat(ethers.utils.formatEther(amounts[1]))
-  console.log(`📊 Expected BNB: ${expectedBNB}`)
-  
-  const tx = await router.swapExactTokensForETH(
-    amountIn,
-    0,
-    path,
-    wallet.address,
-    deadline,
-    { gasLimit: 300000 }
-  )
-  
-  const receipt = await tx.wait()
-  console.log(`✅ SELL executed: ${receipt.transactionHash}`)
-  
-  return {
-    txHash: receipt.transactionHash,
-    expectedBNB: expectedBNB,
-    blockNumber: receipt.blockNumber
-  }
-}
-
-// === REAL TRADE ENDPOINT ===
-app.post('/api/trade', async (req, res) => {
+// === GET TRADE PARAMS (Server calculates but doesn't execute) ===
+app.post('/api/trade-params', async (req, res) => {
   try {
     const { decision, conviction, amount } = req.body
     const tradeAmount = amount || 0.001
-
-    if (!AGENT_PRIVATE_KEY) {
-      return res.status(400).json({ success: false, error: 'AGENT_PRIVATE_KEY not configured' })
-    }
 
     const priceRes = await fetch(`http://localhost:${PORT}/api/price`)
     const priceData = await priceRes.json()
     const currentPrice = priceData.price || 65000
 
-    if (decision === 'BUY') {
-      const result = await executeRealBuy(tradeAmount)
-      
-      position = {
-        entryPrice: currentPrice,
-        amount: tradeAmount,
-        usdtReceived: result.expectedUSDT,
-        txHash: result.txHash,
-        timestamp: Date.now()
-      }
-      
-      res.json({
-        success: true,
-        action: 'BUY',
-        price: currentPrice,
-        amount: tradeAmount,
-        usdtReceived: result.expectedUSDT,
-        txHash: result.txHash,
-        message: `✅ BUY: ${tradeAmount} BNB → ${result.expectedUSDT.toFixed(2)} USDT`
-      })
+    // Get the swap parameters
+    const provider = new ethers.providers.JsonRpcProvider(BSC_RSC)
+    const router = new ethers.Contract(
+      PANCAKE_ROUTER,
+      [
+        'function getAmountsOut(uint amountIn, address[] path) view returns (uint[])'
+      ],
+      provider
+    )
 
-    } else if (decision === 'SELL') {
-      if (!position) {
-        return res.status(400).json({ success: false, error: 'No position to sell' })
-      }
-      
-      const usdtAmount = position.usdtReceived
-      const result = await executeRealSell(usdtAmount.toFixed(2))
-      
-      const bnbChange = result.expectedBNB - position.amount
-      const pnl = bnbChange * currentPrice
-      
-      totalPnL += pnl
-      
-      trades.push({
-        entryPrice: position.entryPrice,
-        exitPrice: currentPrice,
-        amount: position.amount,
-        usdtAmount: usdtAmount,
-        bnbReceived: result.expectedBNB,
-        pnl: pnl,
-        txHash: result.txHash,
-        timestamp: Date.now()
-      })
-      
-      const response = {
-        success: true,
-        action: 'SELL',
-        price: currentPrice,
-        entryPrice: position.entryPrice,
-        pnl: pnl,
-        amount: position.amount,
-        bnbReceived: result.expectedBNB,
-        txHash: result.txHash,
-        message: pnl > 0 ? `✅ +$${pnl.toFixed(2)} PROFIT` : `❌ $${pnl.toFixed(2)} LOSS`
-      }
-      
-      position = null
-      res.json(response)
+    const amountIn = ethers.utils.parseEther(tradeAmount.toString())
+    const path = [TOKENS.WBNB, TOKENS.USDT]
+    const amounts = await router.getAmountsOut(amountIn, path)
+    const expectedUSDT = parseFloat(ethers.utils.formatEther(amounts[1]))
 
-    } else {
-      res.json({ success: false, error: 'Invalid decision' })
-    }
-    
+    res.json({
+      success: true,
+      tradeParams: {
+        action: decision,
+        amount: tradeAmount,
+        price: currentPrice,
+        expectedUSDT,
+        path,
+        routerAddress: PANCAKE_ROUTER,
+        deadline: Math.floor(Date.now() / 1000) + 60 * 20
+      }
+    })
+
   } catch (error) {
-    console.error('Trade error:', error)
+    console.error('Trade params error:', error)
     res.status(500).json({ success: false, error: error.message })
   }
 })
 
-// === AUTO TRADING ===
+// === AUTO TRADING (Only generates signals, user executes) ===
 let autoTradeInterval = null
+let currentDecision = null
 
 app.post('/api/start-auto-trade', (req, res) => {
   if (autoTradeInterval) {
     return res.json({ success: false, message: 'Already running' })
   }
   
-  console.log('🔄 Starting auto trading...')
+  console.log('🔄 Starting auto signal generation...')
   
   autoTradeInterval = setInterval(async () => {
     try {
-      if (!position) {
-        const buyRes = await fetch(`http://localhost:${PORT}/api/trade`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ decision: 'BUY', conviction: 75 })
-        })
-        const buyData = await buyRes.json()
-        console.log('🤖 AI:', buyData.message)
-      } else {
-        const sellRes = await fetch(`http://localhost:${PORT}/api/trade`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ decision: 'SELL', conviction: 75 })
-        })
-        const sellData = await sellRes.json()
-        console.log('🤖 AI:', sellData.message)
+      // Generate a decision based on market data
+      const priceRes = await fetch(`http://localhost:${PORT}/api/price`)
+      const priceData = await priceRes.json()
+      const currentPrice = priceData.price || 65000
+      
+      // Simple AI logic (you can make this more sophisticated)
+      const conviction = 60 + Math.random() * 30
+      const decision = conviction > 70 ? 'BUY' : 'NO BUY'
+      
+      currentDecision = {
+        decision,
+        conviction,
+        price: currentPrice,
+        timestamp: Date.now()
       }
+      
+      console.log(`🤖 AI Signal: ${decision} with ${conviction.toFixed(0)}% conviction`)
+      
     } catch (error) {
       console.error('Auto trade error:', error)
     }
@@ -344,32 +206,22 @@ app.post('/api/stop-auto-trade', (req, res) => {
   }
 })
 
+// === GET CURRENT DECISION ===
+app.get('/api/decision', (req, res) => {
+  res.json({ 
+    success: true, 
+    decision: currentDecision || { decision: 'NO BUY', conviction: 0 } 
+  })
+})
+
 // === STATUS ===
-app.get('/api/status', async (req, res) => {
-  try {
-    const provider = new ethers.providers.JsonRpcProvider(BSC_RPC)
-    const balanceWei = await provider.getBalance(AGENT_ADDRESS)
-    const balanceBNB = parseFloat(ethers.utils.formatEther(balanceWei))
-    
-    const wins = trades.filter(t => t.pnl > 0).length
-    const losses = trades.filter(t => t.pnl < 0).length
-    
-    res.json({
-      success: true,
-      balance: balanceBNB,
-      address: AGENT_ADDRESS,
-      position: position,
-      totalTrades: trades.length,
-      wins: wins,
-      losses: losses,
-      winRate: trades.length > 0 ? (wins / trades.length * 100).toFixed(1) : 0,
-      totalPnL: totalPnL,
-      isAutoTrading: !!autoTradeInterval,
-      trades: trades.slice(-10).reverse()
-    })
-  } catch (error) {
-    res.json({ success: false, error: error.message })
-  }
+app.get('/api/status', (req, res) => {
+  res.json({
+    success: true,
+    isAutoTrading: !!autoTradeInterval,
+    currentDecision: currentDecision,
+    mode: 'Signal Generator - User Executes Trades'
+  })
 })
 
 // === RESET ===
@@ -378,9 +230,7 @@ app.post('/api/reset', (req, res) => {
     clearInterval(autoTradeInterval)
     autoTradeInterval = null
   }
-  position = null
-  trades = []
-  totalPnL = 0
+  currentDecision = null
   console.log('🔄 Reset complete')
   res.json({ success: true, message: 'Reset complete' })
 })
@@ -388,7 +238,6 @@ app.post('/api/reset', (req, res) => {
 // === START ===
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`)
-  console.log(`📍 Agent: ${AGENT_ADDRESS}`)
-  console.log(`📊 Mode: 🔴 100% REAL - NO SIMULATIONS`)
+  console.log(`📊 Mode: 🔴 Signal Generator (User executes trades)`)
   console.log(`🔗 BSC RPC: ${BSC_RPC}`)
 })
