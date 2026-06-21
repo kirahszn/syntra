@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { API_URL } from '../../utils/api'
-import { CheckCircle, XCircle, Clock, Hash, Zap } from 'lucide-react'
+import { CheckCircle, XCircle, Clock, Hash, Zap, Bot } from 'lucide-react'
 
 const safeNumber = (value, fallback = 0) => {
   const num = Number(value)
@@ -28,7 +28,6 @@ export default function ExecutionResult({ isMobile = false }) {
 
     fetchTrades()
     const interval = setInterval(fetchTrades, 5000)
-
     return () => clearInterval(interval)
   }, [])
 
@@ -41,9 +40,9 @@ export default function ExecutionResult({ isMobile = false }) {
     latestTrade?.txHash?.startsWith('0x') && latestTrade?.txHash?.length === 66
 
   const pnl = safeNumber(latestTrade?.pnl, 0)
+  const totalPnL = safeNumber(status?.totalPnL, 0)
   const result = latestTrade?.result || 'PENDING'
-  const isWin = result === 'WIN'
-  const isLoss = result === 'LOSS'
+  const isPositive = pnl >= 0
   const isOpen = result === 'OPEN'
 
   return (
@@ -85,14 +84,13 @@ export default function ExecutionResult({ isMobile = false }) {
             <h3 style={{ fontSize: isMobile ? '15px' : '17px', fontWeight: 600 }}>
               Execution Result
             </h3>
-
             <p
               style={{
                 fontSize: isMobile ? '11px' : '12px',
-                color: isRealTx ? '#00D4AA' : '#FF6B6B'
+                color: isRealTx ? '#00D4AA' : 'rgba(255,255,255,0.35)'
               }}
             >
-              {isRealTx ? '🔴 REAL BSC TX' : '⚠️ NO TX YET'}
+              {isRealTx ? '🔴 REAL BSC TX' : '🤖 Autonomous agent execution'}
             </p>
           </div>
         </div>
@@ -106,7 +104,7 @@ export default function ExecutionResult({ isMobile = false }) {
             color: latestTrade ? '#00D4AA' : 'rgba(255,255,255,0.3)'
           }}
         >
-          {latestTrade ? '✅ BSC Executed' : 'Pending'}
+          {latestTrade ? '✅ Agent Executed' : 'Pending'}
         </div>
       </div>
 
@@ -119,12 +117,12 @@ export default function ExecutionResult({ isMobile = false }) {
               display: 'flex',
               alignItems: 'center',
               gap: isMobile ? '12px' : '16px',
-              background: isWin || isOpen ? 'rgba(0,212,170,0.05)' : 'rgba(255,107,107,0.05)',
-              border: `1px solid ${isWin || isOpen ? 'rgba(0,212,170,0.1)' : 'rgba(255,107,107,0.1)'}`,
+              background: isPositive || isOpen ? 'rgba(0,212,170,0.05)' : 'rgba(255,107,107,0.05)',
+              border: `1px solid ${isPositive || isOpen ? 'rgba(0,212,170,0.1)' : 'rgba(255,107,107,0.1)'}`,
               flexWrap: 'wrap'
             }}
           >
-            {isWin || isOpen ? (
+            {isPositive || isOpen ? (
               <CheckCircle size={isMobile ? 24 : 28} style={{ color: '#00D4AA' }} />
             ) : (
               <XCircle size={isMobile ? 24 : 28} style={{ color: '#FF6B6B' }} />
@@ -135,10 +133,10 @@ export default function ExecutionResult({ isMobile = false }) {
                 style={{
                   fontSize: isMobile ? '18px' : '20px',
                   fontWeight: 600,
-                  color: isWin || isOpen ? '#00D4AA' : '#FF6B6B'
+                  color: isPositive || isOpen ? '#00D4AA' : '#FF6B6B'
                 }}
               >
-                {result}
+                {latestTrade.action} — {result}
               </p>
 
               <p
@@ -147,24 +145,32 @@ export default function ExecutionResult({ isMobile = false }) {
                   color: pnl >= 0 ? '#00D4AA' : '#FF6B6B'
                 }}
               >
-                P&L: {pnl.toFixed(10)} BNB
+                Trade P&L: {pnl.toFixed(10)} BNB
+              </p>
+
+              <p
+                style={{
+                  fontSize: isMobile ? '12px' : '13px',
+                  color: totalPnL >= 0 ? '#00D4AA' : '#FF6B6B'
+                }}
+              >
+                Total P&L: {totalPnL.toFixed(10)} BNB
               </p>
             </div>
 
-            {isRealTx && (
-              <div
-                style={{
-                  padding: '4px 12px',
-                  borderRadius: '100px',
-                  fontSize: '10px',
-                  background: 'rgba(0,212,170,0.1)',
-                  border: '1px solid rgba(0,212,170,0.2)',
-                  color: '#00D4AA'
-                }}
-              >
-                🔗 REAL BSC
-              </div>
-            )}
+            <div
+              style={{
+                padding: '4px 12px',
+                borderRadius: '100px',
+                fontSize: '10px',
+                background: 'rgba(0,212,170,0.1)',
+                border: '1px solid rgba(0,212,170,0.2)',
+                color: '#00D4AA'
+              }}
+            >
+              <Bot size={12} style={{ display: 'inline', marginRight: '4px' }} />
+              AUTO AGENT
+            </div>
           </div>
 
           {latestTrade.txHash && (
@@ -184,7 +190,7 @@ export default function ExecutionResult({ isMobile = false }) {
                     color: 'rgba(255,255,255,0.3)'
                   }}
                 >
-                  🔴 REAL BSC Transaction Hash
+                  BSC Transaction Hash
                 </span>
               </div>
 
@@ -228,14 +234,12 @@ export default function ExecutionResult({ isMobile = false }) {
           >
             <span>
               Executed:{' '}
-              {latestTrade.timestamp
-                ? new Date(latestTrade.timestamp).toLocaleTimeString()
-                : '...'}
+              {latestTrade.timestamp ? new Date(latestTrade.timestamp).toLocaleTimeString() : '...'}
             </span>
 
             <span>Conviction: {Math.round(safeNumber(latestTrade.conviction, 0))}%</span>
 
-            <span style={{ color: '#00D4AA' }}>🔴 REAL</span>
+            <span style={{ color: '#00D4AA' }}>🤖 Autonomous</span>
           </div>
 
           <div
@@ -249,7 +253,7 @@ export default function ExecutionResult({ isMobile = false }) {
               textAlign: 'center'
             }}
           >
-            📊 {recordedTrades.length} total trades recorded on backend
+            📊 {recordedTrades.length} total autonomous trades recorded
           </div>
         </div>
       ) : (
@@ -263,11 +267,11 @@ export default function ExecutionResult({ isMobile = false }) {
           <Clock size={isMobile ? 32 : 40} style={{ margin: '0 auto 16px', opacity: 0.2 }} />
 
           <p style={{ fontSize: isMobile ? '14px' : '15px', color: 'rgba(255,255,255,0.4)' }}>
-            Awaiting execution on BSC...
+            Awaiting autonomous execution...
           </p>
 
           <p style={{ fontSize: isMobile ? '12px' : '13px', marginTop: '6px', color: 'rgba(255,255,255,0.2)' }}>
-            Trades execute on BNB Smart Chain
+            Syntra will execute trades from the funded agent wallet.
           </p>
         </div>
       )}

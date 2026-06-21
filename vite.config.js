@@ -13,9 +13,9 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'https://syntra-ubkl.onrender.com',
+        target: 'http://localhost:5000',
         changeOrigin: true,
-        secure: true
+        secure: false
       }
     }
   },

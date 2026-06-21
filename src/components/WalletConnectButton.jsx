@@ -1,38 +1,39 @@
-import React from 'react'
-import { ConnectButton } from '@rainbow-me/rainbowkit'
-import { useAccount } from 'wagmi'
-import { useApp } from '../context/AppContext'
-import { Wallet, CheckCircle, ChevronDown } from 'lucide-react'
+import React, { useEffect, useState } from 'react'
+import { API_URL } from '../utils/api'
+import { Bot, Copy, CheckCircle, Wallet } from 'lucide-react'
 
 export default function WalletConnectButton({ isMobile = false }) {
-  const { address, isConnected } = useAccount()
-  const { dispatch } = useApp()
+  const [agentWallet, setAgentWallet] = useState(null)
+  const [copied, setCopied] = useState(false)
 
-  React.useEffect(() => {
-    if (isConnected && address) {
-      window.dispatchEvent(
-        new CustomEvent('wallet-connected', {
-          detail: address
-        })
-      )
-
-      dispatch({
-        type: 'SET_WALLET',
-        payload: { connected: true, address }
-      })
-    } else {
-      window.dispatchEvent(new CustomEvent('wallet-disconnected'))
-
-      dispatch({
-        type: 'SET_WALLET',
-        payload: { connected: false, address: null }
-      })
+  useEffect(() => {
+    const fetchAgentWallet = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/agent-wallet`)
+        const data = await res.json()
+        if (data.success) setAgentWallet(data)
+      } catch (error) {
+        console.error('Failed to fetch agent wallet:', error)
+      }
     }
-  }, [isConnected, address, dispatch])
+
+    fetchAgentWallet()
+    const interval = setInterval(fetchAgentWallet, 5000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const address = agentWallet?.address
 
   const formatAddress = addr => {
-    if (!addr) return ''
+    if (!addr) return 'Not configured'
     return `${addr.slice(0, 6)}...${addr.slice(-4)}`
+  }
+
+  const copyAddress = () => {
+    if (!address) return
+    navigator.clipboard.writeText(address)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
 
   return (
@@ -44,136 +45,82 @@ export default function WalletConnectButton({ isMobile = false }) {
         border: '1px solid rgba(255,255,255,0.06)'
       }}
     >
-      <ConnectButton.Custom>
-        {({
-          account,
-          chain,
-          openAccountModal,
-          openChainModal,
-          openConnectModal,
-          mounted
-        }) => {
-          const ready = mounted
-          const connected = ready && account && chain
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+        <div
+          style={{
+            width: '44px',
+            height: '44px',
+            borderRadius: '14px',
+            background: 'linear-gradient(135deg, #6C3CE1, #00D4AA)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+        >
+          <Bot size={22} style={{ color: 'white' }} />
+        </div>
 
-          if (!ready) {
-            return (
-              <button
-                type="button"
-                disabled
-                style={{
-                  padding: '12px 18px',
-                  borderRadius: '14px',
-                  border: 'none',
-                  background: 'rgba(255,255,255,0.05)',
-                  color: 'rgba(255,255,255,0.4)',
-                  fontWeight: 600
-                }}
-              >
-                Loading...
-              </button>
-            )
-          }
-
-          if (!connected) {
-            return (
-              <button
-                type="button"
-                onClick={openConnectModal}
-                style={{
-                  padding: '12px 18px',
-                  borderRadius: '14px',
-                  border: 'none',
-                  background: 'linear-gradient(135deg, #6C3CE1, #00D4AA)',
-                  color: 'white',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px'
-                }}
-              >
-                <Wallet size={18} />
-                Connect Wallet
-              </button>
-            )
-          }
-
-          if (chain.unsupported) {
-            return (
-              <button
-                type="button"
-                onClick={openChainModal}
-                style={{
-                  padding: '12px 18px',
-                  borderRadius: '14px',
-                  border: 'none',
-                  background: 'rgba(255,107,107,0.15)',
-                  color: '#FF6B6B',
-                  fontWeight: 700,
-                  cursor: 'pointer'
-                }}
-              >
-                Wrong network
-              </button>
-            )
-          }
-
-          return (
-            <button
-              type="button"
-              onClick={openAccountModal}
-              style={{
-                padding: '12px 16px',
-                borderRadius: '14px',
-                border: '1px solid rgba(255,255,255,0.12)',
-                background: 'rgba(255,255,255,0.96)',
-                color: '#1F2937',
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}
-            >
-              <CheckCircle size={16} style={{ color: '#00D4AA' }} />
-              {formatAddress(account.address || address)}
-              <ChevronDown size={16} />
-            </button>
-          )
-        }}
-      </ConnectButton.Custom>
+        <div>
+          <h3 style={{ fontSize: '16px', fontWeight: 700 }}>Autonomous Agent Wallet</h3>
+          <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)' }}>
+            No personal wallet connection required
+          </p>
+        </div>
+      </div>
 
       <div
         style={{
-          marginTop: '16px',
-          padding: '12px 16px',
-          borderRadius: '10px',
-          background: 'rgba(255,255,255,0.02)',
-          border: '1px solid rgba(255,255,255,0.04)',
-          fontSize: '12px',
-          color: 'rgba(255,255,255,0.3)',
-          textAlign: 'center'
+          padding: '14px',
+          borderRadius: '12px',
+          background: 'rgba(255,255,255,0.03)',
+          border: '1px solid rgba(255,255,255,0.06)'
         }}
       >
-        💡 Supports MetaMask, Trust Wallet, Coinbase Wallet, and more
+        <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.35)', marginBottom: '6px' }}>
+          Funded demo wallet
+        </p>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <p style={{ fontSize: '14px', fontFamily: 'monospace', color: '#00D4AA' }}>
+            {formatAddress(address)}
+          </p>
+
+          {address && (
+            <button
+              onClick={copyAddress}
+              style={{
+                padding: '4px',
+                background: 'transparent',
+                border: 'none',
+                color: 'rgba(255,255,255,0.35)',
+                cursor: 'pointer'
+              }}
+            >
+              {copied ? <CheckCircle size={14} style={{ color: '#00D4AA' }} /> : <Copy size={14} />}
+            </button>
+          )}
+        </div>
+
+        <div style={{ marginTop: '10px', fontSize: '12px', color: 'rgba(255,255,255,0.45)' }}>
+          <Wallet size={13} style={{ display: 'inline', marginRight: '6px' }} />
+          {Number(agentWallet?.bnbBalance || 0).toFixed(6)} BNB ·{' '}
+          {Number(agentWallet?.usdtBalance || 0).toFixed(6)} USDT
+        </div>
       </div>
 
-      {isConnected && address && (
-        <div
-          style={{
-            marginTop: '12px',
-            padding: '8px 12px',
-            borderRadius: '8px',
-            background: 'rgba(0,212,170,0.05)',
-            border: '1px solid rgba(0,212,170,0.1)',
-            fontSize: '11px',
-            color: '#00D4AA'
-          }}
-        >
-          ✅ Connected: {formatAddress(address)}
-        </div>
-      )}
+      <div
+        style={{
+          marginTop: '14px',
+          padding: '10px 12px',
+          borderRadius: '10px',
+          background: 'rgba(0,212,170,0.05)',
+          border: '1px solid rgba(0,212,170,0.1)',
+          fontSize: '12px',
+          color: 'rgba(255,255,255,0.45)'
+        }}
+      >
+        Judges can start/stop the AI agent without connecting their own wallet.
+      </div>
     </div>
   )
 }

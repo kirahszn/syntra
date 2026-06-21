@@ -1,354 +1,261 @@
-import React, { useState, useEffect } from 'react'
-import { useApp } from '../../context/AppContext'
+import React, { useState, useEffect, useMemo } from 'react'
 import { API_URL } from '../../utils/api'
-import { ethers } from 'ethers'
-import { Brain, Zap, ArrowRight, Clock, Play, Square, AlertTriangle, CheckCircle } from 'lucide-react'
+import AgentLogs from './AgentLogs'
+import {
+  Brain,
+  Play,
+  Square,
+  AlertTriangle,
+  Wallet,
+  Activity,
+  ShieldCheck,
+  TrendingUp,
+  BarChart3,
+  ExternalLink
+} from 'lucide-react'
+
+const safeNumber = (value, fallback = 0) => {
+  const num = Number(value)
+  return Number.isFinite(num) ? num : fallback
+}
+
+const formatAddress = address => {
+  if (!address) return 'Not configured'
+  return `${address.slice(0, 6)}...${address.slice(-4)}`
+}
+
+const formatTx = hash => {
+  if (!hash) return ''
+  return `${hash.slice(0, 18)}...${hash.slice(-8)}`
+}
 
 export default function TraderDecision({ isMobile = false }) {
-  const { state, dispatch } = useApp()
-  const { walletAddress } = state
-  const [showDetails, setShowDetails] = useState(false)
+  const [status, setStatus] = useState(null)
+  const [agentWallet, setAgentWallet] = useState(null)
   const [isAutoTrading, setIsAutoTrading] = useState(false)
   const [autoStatus, setAutoStatus] = useState('Idle')
-  const [currentDecision, setCurrentDecision] = useState(null)
-  const [pendingTrade, setPendingTrade] = useState(null)
-  const [isExecuting, setIsExecuting] = useState(false)
-  const [executionError, setExecutionError] = useState(null)
-  const [executionResult, setExecutionResult] = useState(null)
+  const [openPosition, setOpenPosition] = useState(null)
+  const [latestTrade, setLatestTrade] = useState(null)
+  const [isStarting, setIsStarting] = useState(false)
+  const [isStopping, setIsStopping] = useState(false)
+  const [error, setError] = useState(null)
+
+  const fetchStatus = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/status`)
+      const data = await response.json()
+
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to fetch status')
+      }
+
+      setStatus(data)
+      setIsAutoTrading(Boolean(data.isAutoTrading))
+      setAutoStatus(data.isAutoTrading ? '🟢 Running' : '⚪ Idle')
+      setOpenPosition(data.openPosition || null)
+
+      const trades = Array.isArray(data.trades) ? data.trades : []
+      setLatestTrade(trades.length ? trades[trades.length - 1] : null)
+    } catch (err) {
+      console.error('Failed to check status:', err)
+      setError(err.message || 'Failed to check status')
+    }
+  }
+
+  const fetchAgentWallet = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/agent-wallet`)
+      const data = await response.json()
+
+      if (data.success) {
+        setAgentWallet(data)
+      }
+    } catch (err) {
+      console.error('Failed to fetch agent wallet:', err)
+    }
+  }
 
   useEffect(() => {
-    const checkStatus = async () => {
-      try {
-        const response = await fetch(`${API_URL}/api/status`)
-        const data = await response.json()
-        if (data.success) {
-          setIsAutoTrading(data.isAutoTrading || false)
-          setAutoStatus(data.isAutoTrading ? '🟢 Running' : '⚪ Idle')
-          if (data.pendingTrade) {
-            setPendingTrade(data.pendingTrade)
-            console.log('📊 Pending trade detected:', data.pendingTrade)
-          } else {
-            setPendingTrade(null)
-          }
-        }
-      } catch (error) {
-        console.error('Failed to check status:', error)
-      }
-    }
+    fetchStatus()
+    fetchAgentWallet()
 
-    const getDecision = async () => {
-      try {
-        const response = await fetch(`${API_URL}/api/decision`)
-        const data = await response.json()
-        if (data.success && data.decision) {
-          setCurrentDecision(data.decision)
-          dispatch({
-            type: 'UPDATE_TRADE',
-            payload: {
-              currentTrade: {
-                decision: data.decision.decision,
-                conviction: data.decision.conviction,
-                price: data.decision.price
-              }
-            }
-          })
-        }
-      } catch (error) {
-        console.error('Failed to get decision:', error)
-      }
-    }
-    
-    checkStatus()
-    getDecision()
-    
-    const statusInterval = setInterval(checkStatus, 3000)
-    const decisionInterval = setInterval(getDecision, 5000)
-    
+    const statusInterval = setInterval(fetchStatus, 3000)
+    const walletInterval = setInterval(fetchAgentWallet, 7000)
+
     return () => {
       clearInterval(statusInterval)
-      clearInterval(decisionInterval)
+      clearInterval(walletInterval)
     }
-  }, [dispatch])
+  }, [])
 
   const startAutoTrade = async () => {
+    setIsStarting(true)
+    setError(null)
+
     try {
-      const purchasedAgents = state.marketplace
-        .filter(item => item.purchased)
-        .map(item => item.agent)
-      
       const response = await fetch(`${API_URL}/api/start-auto-trade`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ purchasedAgents })
+        body: JSON.stringify({ purchasedAgents: [] })
       })
+
       const result = await response.json()
-      if (result.success) {
-        setIsAutoTrading(true)
-        setAutoStatus('🟢 Running')
-      } else {
-        alert(result.message || 'Failed to start auto trading')
+
+      if (!result.success) {
+        throw new Error(result.message || result.error || 'Failed to start autonomous trading')
       }
-    } catch (error) {
-      console.error('Start auto trade error:', error)
-      alert('Failed to start auto trading. Make sure backend is running.')
+
+      await fetchStatus()
+      await fetchAgentWallet()
+    } catch (err) {
+      console.error('Start autonomous trading error:', err)
+      setError(err.message || 'Failed to start autonomous trading')
+    } finally {
+      setIsStarting(false)
     }
   }
 
   const stopAutoTrade = async () => {
+    setIsStopping(true)
+    setError(null)
+
     try {
       const response = await fetch(`${API_URL}/api/stop-auto-trade`, {
         method: 'POST'
       })
+
       const result = await response.json()
-      if (result.success) {
-        setIsAutoTrading(false)
-        setAutoStatus('⚪ Idle')
-        setPendingTrade(null)
-      } else {
-        alert(result.message || 'Failed to stop auto trading')
-      }
-    } catch (error) {
-      console.error('Stop auto trade error:', error)
-      alert('Failed to stop auto trading')
-    }
-  }
 
-  const executePendingTrade = async () => {
-    if (!pendingTrade || !walletAddress) {
-      setExecutionError('No trade to execute or wallet not connected')
-      return
-    }
-
-    if (!window.ethereum) {
-      setExecutionError('Please install MetaMask or Trust Wallet')
-      return
-    }
-
-    setIsExecuting(true)
-    setExecutionError(null)
-    setExecutionResult(null)
-
-    try {
-      console.log('📈 Executing trade with params:', pendingTrade)
-
-      const provider = new ethers.providers.Web3Provider(window.ethereum)
-      
-      const network = await provider.getNetwork()
-      if (network.chainId !== 56) {
-        try {
-          await window.ethereum.request({
-            method: 'wallet_switchEthereumChain',
-            params: [{ chainId: '0x38' }]
-          })
-          await new Promise(resolve => setTimeout(resolve, 1000))
-        } catch (switchError) {
-          setExecutionError('❌ Please switch to BNB Smart Chain')
-          setIsExecuting(false)
-          return
-        }
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to stop autonomous trading')
       }
 
-     const signer = provider.getSigner()
-const amountIn = ethers.BigNumber.from(pendingTrade.amountIn)
-
-let tx
-
-if ((pendingTrade.action || 'BUY') === 'BUY') {
-  const router = new ethers.Contract(
-    pendingTrade.routerAddress,
-    [
-      'function swapExactETHForTokens(uint amountOutMin, address[] path, address to, uint deadline) external payable returns (uint[])'
-    ],
-    signer
-  )
-
-  tx = await router.swapExactETHForTokens(
-    0,
-    pendingTrade.path,
-    walletAddress,
-    pendingTrade.deadline,
-    {
-      value: amountIn,
-      gasLimit: 300000
-    }
-  )
-} else if (pendingTrade.action === 'SELL') {
-  const usdtContract = new ethers.Contract(
-    pendingTrade.path[0],
-    [
-      'function approve(address spender, uint amount) public returns (bool)'
-    ],
-    signer
-  )
-
-  const amountIn = ethers.BigNumber.from(pendingTrade.amountIn)
-
-  console.log('🔔 Approving USDT first')
-
-  const approveTx = await usdtContract.approve(
-    pendingTrade.routerAddress,
-    amountIn
-  )
-
-  await approveTx.wait()
-
-  const router = new ethers.Contract(
-    pendingTrade.routerAddress,
-    [
-      'function swapExactTokensForETH(uint amountIn, uint amountOutMin, address[] path, address to, uint deadline) external returns (uint[])'
-    ],
-    signer
-  )
-
-  console.log('🔔 Sending SELL transaction - wallet popup should appear')
-
-  tx = await router.swapExactTokensForETH(
-    amountIn,
-    0,
-    pendingTrade.path,
-    walletAddress,
-    pendingTrade.deadline,
-    {
-      gasLimit: 300000
-    }
-  )
-}
-
-      console.log('✅ Transaction sent:', tx.hash)
-      
-      const receipt = await tx.wait()
-      console.log('✅ Confirmed! Block:', receipt.blockNumber)
-
-      // ✅ RECORD THE TRADE IN BACKEND
-      try {
-        const recordResponse = await fetch(`${API_URL}/api/record-trade`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-  txHash: receipt.transactionHash,
-  action: pendingTrade.action || 'BUY',
-  amountIn: pendingTrade.amountIn,
-  price: pendingTrade.price,
-  expectedUSDT: pendingTrade.expectedUSDT || 0,
-  expectedBNB: pendingTrade.expectedBNB || 0,
-  blockNumber: receipt.blockNumber,
-  walletAddress: walletAddress,
-  conviction: pendingTrade.conviction || 75
-})
-        })
-        const recordData = await recordResponse.json()
-        console.log('✅ Trade recorded in backend:', recordData)
-      } catch (recordError) {
-        console.error('Failed to record trade:', recordError)
-      }
-
-      setExecutionResult({
-        success: true,
-        txHash: receipt.transactionHash,
-        price: pendingTrade.price,
-        amount: ethers.utils.formatEther(amountIn)
-      })
-      
-      setPendingTrade(null)
-      
-      dispatch({
-        type: 'UPDATE_TRADE_RESULT',
-        payload: {
-          result: 'EXECUTED',
-          txHash: receipt.transactionHash,
-          price: pendingTrade.price
-        }
-      })
-
-    } catch (error) {
-      console.error('Trade execution error:', error)
-      
-      if (error.code === 4001) {
-        setExecutionError('❌ You rejected the transaction in your wallet')
-      } else if (error.code === -32603) {
-        setExecutionError('❌ Transaction failed. Make sure you have enough BNB for gas fees.')
-      } else if (error.message && error.message.includes('insufficient funds')) {
-        setExecutionError('❌ Insufficient BNB balance. Please add more BNB for gas fees.')
-      } else {
-        setExecutionError(`❌ ${error.message || 'Trade failed'}`)
-      }
+      await fetchStatus()
+    } catch (err) {
+      console.error('Stop autonomous trading error:', err)
+      setError(err.message || 'Failed to stop autonomous trading')
     } finally {
-      setIsExecuting(false)
+      setIsStopping(false)
     }
   }
 
-  const decision = currentDecision || state.currentTrade
+  const agentAddress =
+    agentWallet?.address ||
+    status?.agentWallet?.address ||
+    null
+
+  const canAutoTrade =
+    Boolean(agentWallet?.canAutoTrade) ||
+    Boolean(status?.agentWallet?.configured)
+
+  const bnbBalance = safeNumber(agentWallet?.bnbBalance, 0)
+  const usdtBalance = safeNumber(agentWallet?.usdtBalance, 0)
+
+  const totalTrades = safeNumber(status?.totalTrades, 0)
+  const winRate = safeNumber(status?.winRate, 0)
+  const totalPnL = safeNumber(status?.totalPnL, 0)
+
+  const activeStatusText = openPosition
+    ? '📈 Managing open position'
+    : isAutoTrading
+      ? '🤖 Searching for next AI trade setup'
+      : '⏸️ Agent paused'
+
+  const isRecoveredPosition = openPosition?.entryTxHash === 'RECOVERED_FROM_WALLET'
+
+  const estimatedPositionText = useMemo(() => {
+    if (!openPosition) return null
+
+    const entryBNB = safeNumber(openPosition.entryBNB, 0)
+    const usdtAmount = safeNumber(openPosition.usdtAmount, 0)
+
+    return {
+      entryBNB,
+      usdtAmount,
+      conviction: safeNumber(openPosition.conviction, 0)
+    }
+  }, [openPosition])
 
   return (
-    <div style={{
-      padding: isMobile ? '20px' : '28px',
-      borderRadius: '20px',
-      background: 'rgba(20, 20, 30, 0.8)',
-      backdropFilter: 'blur(20px)',
-      border: '1px solid rgba(255,255,255,0.06)'
-    }}>
-      <div style={{ 
-        display: 'flex', 
-        alignItems: 'center', 
-        justifyContent: 'space-between', 
-        marginBottom: isMobile ? '16px' : '24px',
-        flexWrap: 'wrap',
-        gap: '8px'
-      }}>
+    <div
+      style={{
+        padding: isMobile ? '20px' : '28px',
+        borderRadius: '20px',
+        background: 'rgba(20, 20, 30, 0.8)',
+        backdropFilter: 'blur(20px)',
+        border: '1px solid rgba(255,255,255,0.06)'
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: isMobile ? '16px' : '24px',
+          flexWrap: 'wrap',
+          gap: '8px'
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '12px' : '14px' }}>
-          <div style={{
-            width: isMobile ? '40px' : '48px',
-            height: isMobile ? '40px' : '48px',
-            borderRadius: isMobile ? '12px' : '14px',
-            background: 'linear-gradient(135deg, #6C3CE1, #00D4AA)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0
-          }}>
+          <div
+            style={{
+              width: isMobile ? '40px' : '48px',
+              height: isMobile ? '40px' : '48px',
+              borderRadius: isMobile ? '12px' : '14px',
+              background: 'linear-gradient(135deg, #6C3CE1, #00D4AA)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }}
+          >
             <Brain size={isMobile ? 18 : 22} style={{ color: 'white' }} />
           </div>
+
           <div>
             <h3 style={{ fontSize: isMobile ? '15px' : '17px', fontWeight: 600 }}>
-              🤖 AI Trading
+              🤖 Autonomous AI Agent
             </h3>
-            <p style={{ 
-              fontSize: isMobile ? '11px' : '12px', 
-              color: pendingTrade ? '#00D4AA' : isAutoTrading ? '#00D4AA' : 'rgba(255,255,255,0.4)'
-            }}>
-              {pendingTrade ? '🚀 Trade Ready to Execute!' :
-               isAutoTrading ? '🟢 Generating signals' : '⚪ Auto-trading disabled'}
+            <p
+              style={{
+                fontSize: isMobile ? '11px' : '12px',
+                color: isAutoTrading ? '#00D4AA' : 'rgba(255,255,255,0.4)'
+              }}
+            >
+              {activeStatusText}
             </p>
           </div>
         </div>
-        <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          gap: '8px',
-          flexWrap: 'wrap'
-        }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '4px 12px',
-            borderRadius: '100px',
-            fontSize: isMobile ? '10px' : '12px',
-            background: isAutoTrading ? 'rgba(0,212,170,0.1)' : 'rgba(255,255,255,0.04)',
-            color: isAutoTrading ? '#00D4AA' : 'rgba(255,255,255,0.3)'
-          }}>
-            <div style={{
-              width: '6px',
-              height: '6px',
-              borderRadius: '50%',
-              background: isAutoTrading ? '#00D4AA' : 'rgba(255,255,255,0.2)',
-              animation: isAutoTrading ? 'pulseGlow 1s ease-in-out infinite' : 'none'
-            }} />
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '4px 12px',
+              borderRadius: '100px',
+              fontSize: isMobile ? '10px' : '12px',
+              background: isAutoTrading ? 'rgba(0,212,170,0.1)' : 'rgba(255,255,255,0.04)',
+              color: isAutoTrading ? '#00D4AA' : 'rgba(255,255,255,0.3)'
+            }}
+          >
+            <div
+              style={{
+                width: '6px',
+                height: '6px',
+                borderRadius: '50%',
+                background: isAutoTrading ? '#00D4AA' : 'rgba(255,255,255,0.2)',
+                animation: isAutoTrading ? 'pulseGlow 1s ease-in-out infinite' : 'none'
+              }}
+            />
             {autoStatus}
           </div>
+
           {isAutoTrading ? (
             <button
               onClick={stopAutoTrade}
+              disabled={isStopping}
               style={{
                 padding: isMobile ? '6px 14px' : '8px 20px',
                 borderRadius: '10px',
@@ -357,240 +264,313 @@ if ((pendingTrade.action || 'BUY') === 'BUY') {
                 border: 'none',
                 background: 'rgba(255,107,107,0.15)',
                 color: '#FF6B6B',
-                cursor: 'pointer',
+                cursor: isStopping ? 'default' : 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '6px'
+                gap: '6px',
+                opacity: isStopping ? 0.6 : 1
               }}
             >
               <Square size={isMobile ? 14 : 16} />
-              Stop
+              {isStopping ? 'Stopping...' : 'Stop'}
             </button>
           ) : (
             <button
               onClick={startAutoTrade}
+              disabled={isStarting || !canAutoTrade}
               style={{
                 padding: isMobile ? '6px 14px' : '8px 20px',
                 borderRadius: '10px',
                 fontSize: isMobile ? '12px' : '14px',
                 fontWeight: 600,
                 border: 'none',
-                background: 'linear-gradient(135deg, #6C3CE1, #00D4AA)',
-                color: 'white',
-                cursor: 'pointer',
+                background:
+                  isStarting || !canAutoTrade
+                    ? 'rgba(255,255,255,0.08)'
+                    : 'linear-gradient(135deg, #6C3CE1, #00D4AA)',
+                color: isStarting || !canAutoTrade ? 'rgba(255,255,255,0.3)' : 'white',
+                cursor: isStarting || !canAutoTrade ? 'default' : 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px'
               }}
             >
               <Play size={isMobile ? 14 : 16} />
-              Start Auto
+              {isStarting ? 'Starting...' : 'Start Agent'}
             </button>
           )}
         </div>
       </div>
 
-      <div style={{
-        padding: '12px 16px',
-        borderRadius: '12px',
-        marginBottom: '16px',
-        background: 'rgba(255,255,255,0.03)',
-        border: '1px solid rgba(255,255,255,0.04)',
-        display: 'flex',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: '8px',
-        fontSize: isMobile ? '12px' : '14px'
-      }}>
+      <div
+        style={{
+          padding: '12px 16px',
+          borderRadius: '12px',
+          marginBottom: '16px',
+          background: 'rgba(255,255,255,0.03)',
+          border: '1px solid rgba(255,255,255,0.04)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '8px',
+          fontSize: isMobile ? '12px' : '14px'
+        }}
+      >
         <span style={{ color: 'rgba(255,255,255,0.4)' }}>
-          {pendingTrade ? '🚀 Trade ready! Click "Execute Trade" below' :
-           isAutoTrading ? '🤖 AI is generating trading signals' : 
-           '⏸️ AI is paused'}
+          {openPosition
+            ? '📈 Agent is monitoring take-profit / stop-loss'
+            : isAutoTrading
+              ? '🤖 Agent is trading autonomously within your rules'
+              : '⏸️ Agent is paused'}
         </span>
-        <span style={{ 
-          color: pendingTrade ? '#00D4AA' : isAutoTrading ? '#00D4AA' : 'rgba(255,255,255,0.3)',
-          fontFamily: 'monospace'
-        }}>
-          {pendingTrade ? '🔴 TRADE READY' : isAutoTrading ? '🔴 SIGNAL GENERATOR' : '⚪ IDLE'}
+
+        <span
+          style={{
+            color: canAutoTrade ? '#00D4AA' : '#FF6B6B',
+            fontFamily: 'monospace'
+          }}
+        >
+          {canAutoTrade ? '🔴 AGENT WALLET READY' : '⚠️ AGENT WALLET NOT CONFIGURED'}
         </span>
       </div>
 
-      {decision ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? '12px' : '16px' }}>
-          <div style={{
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
+          gap: '12px',
+          marginBottom: '16px'
+        }}
+      >
+        <div
+          style={{
+            padding: '14px',
+            borderRadius: '12px',
+            background: 'rgba(255,255,255,0.02)',
+            border: '1px solid rgba(255,255,255,0.04)'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+            <Wallet size={16} style={{ color: '#00D4AA' }} />
+            <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.35)' }}>Agent Wallet</p>
+          </div>
+          <p style={{ fontSize: '14px', color: '#00D4AA', fontFamily: 'monospace' }}>
+            {formatAddress(agentAddress)}
+          </p>
+        </div>
+
+        <div
+          style={{
+            padding: '14px',
+            borderRadius: '12px',
+            background: 'rgba(255,255,255,0.02)',
+            border: '1px solid rgba(255,255,255,0.04)'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+            <Activity size={16} style={{ color: '#6C3CE1' }} />
+            <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.35)' }}>Balances</p>
+          </div>
+          <p style={{ fontSize: '13px', color: 'white' }}>
+            {bnbBalance.toFixed(6)} BNB
+          </p>
+          <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.45)' }}>
+            {usdtBalance.toFixed(6)} USDT
+          </p>
+        </div>
+
+        <div
+          style={{
+            padding: '14px',
+            borderRadius: '12px',
+            background: 'rgba(255,255,255,0.02)',
+            border: '1px solid rgba(255,255,255,0.04)'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+            <ShieldCheck size={16} style={{ color: '#00D4AA' }} />
+            <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.35)' }}>Policy</p>
+          </div>
+          <p style={{ fontSize: '13px', color: 'white' }}>
+            Max trade: {safeNumber(status?.riskSettings?.maxTradeAmount, 0)} BNB
+          </p>
+          <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.45)' }}>
+            TP {safeNumber(status?.riskSettings?.takeProfitPercent, 0)}% / SL{' '}
+            {safeNumber(status?.riskSettings?.stopLossPercent, 0)}%
+          </p>
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
+          gap: '12px',
+          marginBottom: '16px'
+        }}
+      >
+        <div
+          style={{
+            padding: '14px',
+            borderRadius: '12px',
+            background: 'rgba(255,255,255,0.02)',
+            border: '1px solid rgba(255,255,255,0.04)'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+            <BarChart3 size={16} style={{ color: '#00D4AA' }} />
+            <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.35)' }}>Total Trades</p>
+          </div>
+          <p style={{ fontSize: '18px', color: 'white', fontWeight: 700 }}>
+            {totalTrades}
+          </p>
+        </div>
+
+        <div
+          style={{
+            padding: '14px',
+            borderRadius: '12px',
+            background: 'rgba(255,255,255,0.02)',
+            border: '1px solid rgba(255,255,255,0.04)'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+            <TrendingUp size={16} style={{ color: '#00D4AA' }} />
+            <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.35)' }}>Win Rate</p>
+          </div>
+          <p style={{ fontSize: '18px', color: 'white', fontWeight: 700 }}>
+            {winRate.toFixed(1)}%
+          </p>
+        </div>
+
+        <div
+          style={{
+            padding: '14px',
+            borderRadius: '12px',
+            background: 'rgba(255,255,255,0.02)',
+            border: '1px solid rgba(255,255,255,0.04)'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+            <Activity size={16} style={{ color: totalPnL >= 0 ? '#00D4AA' : '#FF6B6B' }} />
+            <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.35)' }}>Total P&L</p>
+          </div>
+          <p
+            style={{
+              fontSize: '18px',
+              color: totalPnL >= 0 ? '#00D4AA' : '#FF6B6B',
+              fontWeight: 700
+            }}
+          >
+            {totalPnL.toFixed(10)} BNB
+          </p>
+        </div>
+      </div>
+
+      {openPosition && estimatedPositionText && (
+        <div
+          style={{
             padding: isMobile ? '16px' : '20px',
             borderRadius: '14px',
-            background: decision.decision === 'BUY' 
-              ? 'rgba(0,212,170,0.05)' 
-              : 'rgba(255,107,107,0.05)',
-            border: `1px solid ${decision.decision === 'BUY' 
-              ? 'rgba(0,212,170,0.1)' 
-              : 'rgba(255,107,107,0.1)'}`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: '12px'
-          }}>
-            <div>
-              <p style={{ 
-                fontSize: isMobile ? '11px' : '13px', 
-                color: 'rgba(255,255,255,0.3)' 
-              }}>
-                AI Signal
-              </p>
-              <p style={{ 
-                fontSize: isMobile ? '28px' : '32px', 
-                fontWeight: 700, 
-                letterSpacing: '-0.5px',
-                color: decision.decision === 'BUY' ? '#00D4AA' : '#FF6B6B'
-              }}>
-                {decision.decision}
-              </p>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <p style={{ fontSize: isMobile ? '11px' : '13px', color: 'rgba(255,255,255,0.3)' }}>
-                Conviction
-              </p>
-              <p style={{ fontSize: isMobile ? '28px' : '32px', fontWeight: 700 }}>
-                {Math.round(decision.conviction || 0)}%
-              </p>
-            </div>
-          </div>
+            background: 'rgba(0,212,170,0.06)',
+            border: '1px solid rgba(0,212,170,0.12)',
+            marginBottom: '16px'
+          }}
+        >
+          <h4 style={{ fontSize: '14px', color: '#00D4AA', marginBottom: '8px' }}>
+            📈 Open Position
+          </h4>
 
-          {decision.price && (
-            <div style={{
-              padding: isMobile ? '12px' : '14px',
-              borderRadius: '12px',
-              background: 'rgba(255,255,255,0.02)',
-              border: '1px solid rgba(255,255,255,0.04)'
-            }}>
-              <p style={{ fontSize: isMobile ? '10px' : '12px', color: 'rgba(255,255,255,0.3)' }}>
-                Price at signal
-              </p>
-              <p style={{ fontSize: isMobile ? '16px' : '18px', fontWeight: 600, color: 'white' }}>
-                ${decision.price.toFixed(2)}
-              </p>
+          {isRecoveredPosition && (
+            <div
+              style={{
+                padding: '8px 10px',
+                borderRadius: '8px',
+                background: 'rgba(245,158,11,0.08)',
+                border: '1px solid rgba(245,158,11,0.16)',
+                color: '#F59E0B',
+                fontSize: '12px',
+                marginBottom: '10px'
+              }}
+            >
+              ⚠️ Position recovered from wallet after backend restart.
             </div>
           )}
 
-          {pendingTrade && (
-            <div style={{
-              padding: isMobile ? '16px' : '20px',
-              borderRadius: '14px',
-              background: 'rgba(0,212,170,0.1)',
-              border: '1px solid rgba(0,212,170,0.2)'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-                <div>
-                  <h4 style={{ fontSize: '14px', color: '#00D4AA', marginBottom: '4px' }}>
-                    🚀 Trade Ready to Execute
-                  </h4>
-                  <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)' }}>
-                    {ethers.utils.formatEther(pendingTrade.amountIn)} BNB @ ${pendingTrade.price?.toFixed(2)}
-                  </p>
-                </div>
-                <button
-                  onClick={executePendingTrade}
-                  disabled={isExecuting || !walletAddress}
-                  style={{
-                    padding: isMobile ? '8px 20px' : '10px 24px',
-                    borderRadius: '12px',
-                    fontSize: isMobile ? '14px' : '15px',
-                    fontWeight: 600,
-                    border: 'none',
-                    background: (isExecuting || !walletAddress)
-                      ? 'rgba(255,255,255,0.05)'
-                      : 'linear-gradient(135deg, #00D4AA, #34D399)',
-                    color: (isExecuting || !walletAddress)
-                      ? 'rgba(255,255,255,0.3)'
-                      : 'white',
-                    cursor: (isExecuting || !walletAddress) ? 'default' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px'
-                  }}
-                >
-                  {isExecuting ? (
-                    <>
-                      <div style={{
-                        width: '16px',
-                        height: '16px',
-                        border: '2px solid rgba(255,255,255,0.2)',
-                        borderTop: '2px solid #00D4AA',
-                        borderRadius: '50%',
-                        animation: 'spin 0.8s linear infinite'
-                      }} />
-                      Executing...
-                    </>
-                  ) : !walletAddress ? (
-                    'Connect Wallet'
-                  ) : (
-                    <>
-                      <CheckCircle size={18} />
-                      Confirm Trade in Wallet
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {executionResult && (
-            <div style={{
-              padding: isMobile ? '12px' : '14px',
-              borderRadius: '10px',
-              background: 'rgba(0,212,170,0.05)',
-              border: '1px solid rgba(0,212,170,0.1)',
-              fontSize: isMobile ? '12px' : '13px',
-              color: 'rgba(255,255,255,0.7)'
-            }}>
-              ✅ Trade Executed!
-              <br />
-              <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.3)' }}>
-                Tx: {executionResult.txHash.slice(0, 20)}...{executionResult.txHash.slice(-10)}
-              </span>
-              <br />
-              <a
-                href={`https://bscscan.com/tx/${executionResult.txHash}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ fontSize: '11px', color: '#6C3CE1' }}
-              >
-                🔗 View on BSCScan
-              </a>
-            </div>
-          )}
-
-          {executionError && (
-            <div style={{
-              padding: isMobile ? '12px' : '14px',
-              borderRadius: '10px',
-              background: 'rgba(255,107,107,0.1)',
-              border: '1px solid rgba(255,107,107,0.15)',
-              fontSize: isMobile ? '12px' : '13px',
-              color: '#FF6B6B'
-            }}>
-              <AlertTriangle size={14} style={{ display: 'inline', marginRight: '8px' }} />
-              {executionError}
-            </div>
-          )}
-        </div>
-      ) : (
-        <div style={{ 
-          textAlign: 'center',
-          padding: isMobile ? '32px 0' : '40px 0',
-          color: 'rgba(255,255,255,0.2)'
-        }}>
-          <Brain size={isMobile ? 32 : 40} style={{ margin: '0 auto 16px', opacity: 0.2 }} />
-          <p style={{ fontSize: isMobile ? '14px' : '15px', color: 'rgba(255,255,255,0.4)' }}>
-            Waiting for AI signals...
+          <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
+            Entry value: {estimatedPositionText.entryBNB.toFixed(8)} BNB
           </p>
-          <p style={{ fontSize: isMobile ? '12px' : '13px', marginTop: '6px', color: 'rgba(255,255,255,0.2)' }}>
-            Click "Start Auto" to begin AI signal generation
+          <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
+            Holding: {estimatedPositionText.usdtAmount.toFixed(6)} USDT
+          </p>
+          <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
+            Conviction: {Math.round(estimatedPositionText.conviction)}%
           </p>
         </div>
       )}
+
+      {latestTrade && (
+        <div
+          style={{
+            padding: isMobile ? '12px' : '14px',
+            borderRadius: '10px',
+            background: 'rgba(255,255,255,0.03)',
+            border: '1px solid rgba(255,255,255,0.06)',
+            fontSize: isMobile ? '12px' : '13px',
+            color: 'rgba(255,255,255,0.7)',
+            marginBottom: '16px'
+          }}
+        >
+          ✅ Latest Trade: {latestTrade.action} — {latestTrade.result}
+          {latestTrade.reason ? ` (${latestTrade.reason})` : ''}
+          <br />
+
+          {latestTrade.txHash && (
+            <>
+              <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.3)' }}>
+                Tx: {formatTx(latestTrade.txHash)}
+              </span>
+              <br />
+              <a
+                href={`https://bscscan.com/tx/${latestTrade.txHash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  fontSize: '11px',
+                  color: '#6C3CE1',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  marginTop: '4px',
+                  textDecoration: 'none'
+                }}
+              >
+                <ExternalLink size={11} />
+                View on BSCScan
+              </a>
+            </>
+          )}
+        </div>
+      )}
+
+      {error && (
+        <div
+          style={{
+            padding: isMobile ? '12px' : '14px',
+            borderRadius: '10px',
+            background: 'rgba(255,107,107,0.1)',
+            border: '1px solid rgba(255,107,107,0.15)',
+            fontSize: isMobile ? '12px' : '13px',
+            color: '#FF6B6B',
+            marginBottom: '16px'
+          }}
+        >
+          <AlertTriangle size={14} style={{ display: 'inline', marginRight: '8px' }} />
+          {error}
+        </div>
+      )}
+
+      <AgentLogs isMobile={isMobile} />
     </div>
   )
 }

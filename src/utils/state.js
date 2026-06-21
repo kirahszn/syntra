@@ -1,11 +1,10 @@
-// src/utils/state.js
 export function initializeState() {
   return {
     agents: [
       {
         type: 'whale',
         name: 'Whale Agent',
-        price: 0.001,  // Reduced from 0.01
+        price: 0,
         trust: 85,
         accuracy: 78,
         signal: null,
@@ -14,7 +13,7 @@ export function initializeState() {
       {
         type: 'narrative',
         name: 'Narrative Agent',
-        price: 0.0005,  // Reduced from 0.005
+        price: 0,
         trust: 72,
         accuracy: 65,
         signal: null,
@@ -23,7 +22,7 @@ export function initializeState() {
       {
         type: 'derivatives',
         name: 'Derivatives Agent',
-        price: 0.0008,  // Reduced from 0.008
+        price: 0,
         trust: 68,
         accuracy: 71,
         signal: null,
@@ -31,24 +30,29 @@ export function initializeState() {
       }
     ],
     marketplace: [
-      { agent: 'whale', price: 0.001, trust: 85, purchased: false },
-      { agent: 'narrative', price: 0.0005, trust: 72, purchased: false },
-      { agent: 'derivatives', price: 0.0008, trust: 68, purchased: false }
+      { agent: 'whale', price: 0, trust: 85, purchased: false },
+      { agent: 'narrative', price: 0, trust: 72, purchased: false },
+      { agent: 'derivatives', price: 0, trust: 68, purchased: false }
     ],
     trades: [],
     currentTrade: null,
+    backendStatus: null,
+    agentWallet: null,
     lastUpdate: null,
     lastExecution: null,
-    loading: false
+    loading: false,
+    tradeCount: 0,
+    winCount: 0,
+    walletConnected: false,
+    walletAddress: null
   }
 }
 
 export function updateAgentSignal(state, agentType, signal) {
-  const updatedAgents = state.agents.map(agent => 
-    agent.type === agentType 
-      ? { ...agent, signal } 
-      : agent
+  const updatedAgents = state.agents.map(agent =>
+    agent.type === agentType ? { ...agent, signal } : agent
   )
+
   return {
     ...state,
     agents: updatedAgents,
@@ -68,25 +72,12 @@ export function addTrade(state, trade) {
 export function updateReputation(state, updates) {
   const updatedAgents = state.agents.map(agent => {
     const update = updates[agent.type]
-    if (update) {
-      return {
-        ...agent,
-        trust: update.trust,
-        accuracy: update.accuracy
-      }
-    }
-    return agent
+    return update ? { ...agent, trust: update.trust, accuracy: update.accuracy } : agent
   })
 
   const updatedMarketplace = state.marketplace.map(item => {
     const update = updates[item.agent]
-    if (update) {
-      return {
-        ...item,
-        trust: update.trust
-      }
-    }
-    return item
+    return update ? { ...item, trust: update.trust } : item
   })
 
   return {
@@ -96,12 +87,11 @@ export function updateReputation(state, updates) {
   }
 }
 
-export function purchaseSignal(state, agentType, price) {
+export function purchaseSignal(state, agentType, price = 0) {
   const updatedMarketplace = state.marketplace.map(item =>
-    item.agent === agentType
-      ? { ...item, purchased: true, price }
-      : item
+    item.agent === agentType ? { ...item, purchased: true, price: 0 } : item
   )
+
   return {
     ...state,
     marketplace: updatedMarketplace

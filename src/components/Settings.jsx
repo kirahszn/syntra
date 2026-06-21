@@ -10,8 +10,8 @@ export default function Settings({ isMobile = false }) {
     drawdownCap: 10,
     maxTradeAmount: 0.01,
     maxDailyTrades: 10,
-    stopLossPercent: 5,
-    takeProfitPercent: 10,
+    stopLossPercent: 0.1,
+    takeProfitPercent: 0.1,
     tokenAllowlist: ['BTC', 'ETH', 'SOL']
   })
   const [saved, setSaved] = useState(false)

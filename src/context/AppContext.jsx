@@ -1,23 +1,21 @@
-// src/context/AppContext.jsx
-import React, { createContext, useContext, useReducer, useEffect, useState } from 'react'
-import { 
-  initializeState, 
-  updateAgentSignal, 
-  addTrade, 
+import React, { createContext, useContext, useReducer, useEffect } from 'react'
+import {
+  initializeState,
+  updateAgentSignal,
   updateReputation,
-  purchaseSignal 
+  purchaseSignal
 } from '../utils/state'
 import { API_URL } from '../utils/api'
-import { generateSignals, shouldUpdateSignals } from '../utils/agents'
 
 const AppContext = createContext()
 
-// Load state from localStorage
 const loadState = () => {
   try {
     const savedState = localStorage.getItem('syntra-state')
+
     if (savedState) {
       const parsed = JSON.parse(savedState)
+
       return {
         ...initializeState(),
         ...parsed,
@@ -25,8 +23,8 @@ const loadState = () => {
         marketplace: parsed.marketplace || initializeState().marketplace,
         trades: parsed.trades || [],
         currentTrade: parsed.currentTrade || null,
-        lastUpdate: parsed.lastUpdate || null,
-        lastExecution: parsed.lastExecution || null,
+        backendStatus: parsed.backendStatus || null,
+        agentWallet: parsed.agentWallet || null,
         tradeCount: parsed.tradeCount || 0,
         winCount: parsed.winCount || 0,
         walletConnected: parsed.walletConnected || false,
@@ -36,6 +34,7 @@ const loadState = () => {
   } catch (error) {
     console.error('Failed to load state:', error)
   }
+
   return initializeState()
 }
 
@@ -43,40 +42,63 @@ const initialState = loadState()
 
 function appReducer(state, action) {
   let newState
+
   switch (action.type) {
     case 'SET_WALLET':
-      return { 
-        ...state, 
+      newState = {
+        ...state,
         walletConnected: action.payload.connected,
-        walletAddress: action.payload.address 
+        walletAddress: action.payload.address
       }
+      break
+
+    case 'SYNC_BACKEND_STATUS': {
+      const backendStatus = action.payload || {}
+      const trades = Array.isArray(backendStatus.trades) ? backendStatus.trades : []
+
+      const latestTrade = trades.length ? trades[trades.length - 1] : null
+      const wins = trades.filter(t => t.result === 'WIN').length
+
+      newState = {
+        ...state,
+        backendStatus,
+        trades,
+        currentTrade: latestTrade,
+        tradeCount: backendStatus.totalTrades ?? trades.length,
+        winCount: backendStatus.wins ?? wins,
+        loading: false
+      }
+      break
+    }
+
+    case 'SYNC_AGENT_WALLET':
+      newState = {
+        ...state,
+        agentWallet: action.payload || null
+      }
+      break
 
     case 'UPDATE_TRADE':
-      return { 
-        ...state, 
-        currentTrade: action.payload.currentTrade 
+      newState = {
+        ...state,
+        currentTrade: action.payload.currentTrade
       }
+      break
 
-    case 'UPDATE_SIGNALS':
+    case 'UPDATE_SIGNALS': {
       const newSignals = action.payload
       let updatedState = { ...state }
-      Object.entries(newSignals).forEach(([agentType, signal]) => {
+
+      Object.entries(newSignals || {}).forEach(([agentType, signal]) => {
         updatedState = updateAgentSignal(updatedState, agentType, signal)
       })
+
       newState = updatedState
       break
+    }
 
     case 'PURCHASE_SIGNAL':
       newState = purchaseSignal(state, action.payload.agent, action.payload.price)
-      break
-
-    case 'EXECUTE_TRADE':
-      const trade = action.payload.trade
-      newState = addTrade(state, trade)
-      newState.tradeCount = (newState.tradeCount || 0) + 1
-      if (trade.result === 'WIN') {
-        newState.winCount = (newState.winCount || 0) + 1
-      }
       break
 
     case 'UPDATE_REPUTATION':
@@ -95,123 +117,107 @@ function appReducer(state, action) {
         tradeCount: 0,
         winCount: 0,
         walletConnected: state.walletConnected,
-        walletAddress: state.walletAddress
+        walletAddress: state.walletAddress,
+        backendStatus: null,
+        agentWallet: null
       }
       break
 
     default:
       newState = state
   }
-  
+
   try {
     localStorage.setItem('syntra-state', JSON.stringify(newState))
   } catch (error) {
     console.error('Failed to save state:', error)
   }
-  
+
   return newState
 }
 
 export function AppProvider({ children }) {
   const [state, dispatch] = useReducer(appReducer, initialState)
-  const [walletConnected, setWalletConnected] = useState(state.walletConnected || false)
 
-  // Listen for wallet connection events
   useEffect(() => {
-    const handleWalletConnected = (event) => {
+    const handleWalletConnected = event => {
       const address = event.detail?.address || event.detail
-      setWalletConnected(true)
-      dispatch({ 
-        type: 'SET_WALLET', 
-        payload: { connected: true, address: address } 
+
+      dispatch({
+        type: 'SET_WALLET',
+        payload: { connected: true, address }
       })
-      console.log('🔗 Wallet connected:', address)
     }
 
     const handleWalletDisconnected = () => {
-      setWalletConnected(false)
-      dispatch({ 
-        type: 'SET_WALLET', 
-        payload: { connected: false, address: null } 
+      dispatch({
+        type: 'SET_WALLET',
+        payload: { connected: false, address: null }
       })
-      console.log('🔗 Wallet disconnected')
     }
 
     window.addEventListener('wallet-connected', handleWalletConnected)
     window.addEventListener('wallet-disconnected', handleWalletDisconnected)
-    
+
     return () => {
       window.removeEventListener('wallet-connected', handleWalletConnected)
       window.removeEventListener('wallet-disconnected', handleWalletDisconnected)
     }
   }, [])
 
-  // Auto-generate signals ONLY if wallet is connected
   useEffect(() => {
-    if (!walletConnected) {
-      console.log('⏸️ Waiting for wallet connection...')
-      return
-    }
+    let isMounted = true
 
-    const interval = setInterval(async () => {
-      if (shouldUpdateSignals(state.lastUpdate)) {
-        const signals = await generateSignals()
-        if (signals) {
-          dispatch({ type: 'UPDATE_SIGNALS', payload: signals })
-        }
-      }
-    }, 3000)
-
-    return () => clearInterval(interval)
-  }, [state.lastUpdate, walletConnected])
-
-  // Fetch REAL trade status from server ONLY if wallet connected
-  useEffect(() => {
-    if (!walletConnected) return
-
-    const fetchTradeStatus = async () => {
+    const syncBackend = async () => {
       try {
-        const response = await fetch(`${API_URL}/api/status`)
-        const data = await response.json()
-        if (data.success && data.trades && data.trades.length > 0) {
-          const latestTrade = data.trades[0]
+        const statusRes = await fetch(`${API_URL}/api/status`)
+        const statusData = await statusRes.json()
+
+        if (statusData?.success && isMounted) {
           dispatch({
-            type: 'EXECUTE_TRADE',
-            payload: {
-              trade: {
-                decision: latestTrade.action || 'BUY',
-                conviction: 75,
-                result: latestTrade.pnl > 0 ? 'WIN' : 'LOSS',
-                profit: latestTrade.pnl || 0,
-                txHash: latestTrade.txHash || '0x...',
-                executedAt: latestTrade.timestamp || Date.now(),
-                pnl: latestTrade.pnl || 0
-              }
-            }
+            type: 'SYNC_BACKEND_STATUS',
+            payload: statusData
+          })
+        }
+
+        const walletRes = await fetch(`${API_URL}/api/agent-wallet`)
+        const walletData = await walletRes.json()
+
+        if (walletData?.success && isMounted) {
+          dispatch({
+            type: 'SYNC_AGENT_WALLET',
+            payload: walletData
           })
         }
       } catch (error) {
-        console.error('Failed to fetch trade status:', error)
+        console.error('Failed to sync backend:', error)
       }
     }
 
-    const interval = setInterval(fetchTradeStatus, 5000)
-    return () => clearInterval(interval)
-  }, [walletConnected])
+    syncBackend()
+    const interval = setInterval(syncBackend, 5000)
 
-  const value = { state, dispatch, walletConnected }
+    return () => {
+      isMounted = false
+      clearInterval(interval)
+    }
+  }, [])
 
-  return (
-    <AppContext.Provider value={value}>
-      {children}
-    </AppContext.Provider>
-  )
+  const value = {
+    state,
+    dispatch,
+    walletConnected: state.walletConnected
+  }
+
+  return <AppContext.Provider value={value}>{children}</AppContext.Provider>
 }
 
 export function useApp() {
   const context = useContext(AppContext)
+
   if (!context) {
     throw new Error('useApp must be used within AppProvider')
   }
+
   return context
 }
