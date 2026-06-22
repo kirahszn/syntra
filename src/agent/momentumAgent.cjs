@@ -1,31 +1,25 @@
 // src/agent/momentumAgent.cjs
-// Syntra Agent v15 - DEMO MODE (fast cycles for judges)
-
+// Syntra Agent v17 - TWAK via direct Node require
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const dotenv = require('dotenv');
 const { ethers } = require('ethers');
 dotenv.config();
-
 const PASSWORD = process.env.TWAK_WALLET_PASSWORD;
 const AGENT_ADDRESS = process.env.AGENT_ADDRESS || '0x204b13fe30C141cfA4E8a3D6136aA3391db846C2';
 const BSC_RPC = process.env.BSC_RPC || 'https://bsc-dataseed.binance.org/';
 const provider = new ethers.providers.JsonRpcProvider(BSC_RPC);
-
+const TWAK_CMD = 'npx @trustwallet/cli';
 const STATE_FILE = path.join(__dirname, '..', '..', 'agent-state.json');
 const CONTROL_FILE = path.join(__dirname, '..', '..', 'agent-control.json');
 const HISTORY_FILE = path.join(__dirname, '..', '..', 'trade-history.json');
-
-// DEMO SETTINGS - fast and visible
-const CYCLE_SECONDS = 15;        // Check every 15 seconds
-const COOLDOWN_SECONDS = 30;     // Trade max every 30 seconds
-const MAX_TRADE_BNB = 0.0002;    // Tiny trades (~.12)
-const MAX_DAILY_TRADES = 50;     // Plenty for demo
+const CYCLE_SECONDS = 15;
+const COOLDOWN_SECONDS = 30;
+const MAX_TRADE_BNB = 0.0002;
 const TRADE_PAIRS = ['USDT', 'ETH', 'USDC'];
-
 // ============================================
-// BALANCE VIA ETHERS
+// BALANCE
 // ============================================
 async function getBnbBalance() {
   try {
@@ -46,13 +40,12 @@ async function getBnbBalance() {
     return { bnb: 0, usd: 0 };
   }
 }
-
 // ============================================
-// SWAP
+// SWAP VIA TWAK (direct Node call)
 // ============================================
 function twakSwap(amount, fromToken, toToken) {
   try {
-    const cmd = 'node_modules/.bin/twak swap ' + amount + ' ' + fromToken + ' ' + toToken + ' --chain bsc --password "' + PASSWORD + '" --slippage 1 --json';
+    const cmd = TWAK_CMD + ' swap ' + amount + ' ' + fromToken + ' ' + toToken + ' --chain bsc --password "' + PASSWORD + '" --slippage 1 --json';
     const result = execSync(cmd, { encoding: 'utf8', timeout: 60000, env: { ...process.env } });
     const parsed = JSON.parse(result);
     const hash = parsed.txHash || parsed.transactionHash || parsed.hash;
@@ -67,7 +60,6 @@ function twakSwap(amount, fromToken, toToken) {
     }
   }
 }
-
 // ============================================
 // HISTORY
 // ============================================
@@ -78,7 +70,6 @@ function loadHistory() {
 }
 function saveHistory(h) { fs.writeFileSync(HISTORY_FILE, JSON.stringify(h, null, 2)); }
 let history = loadHistory();
-
 // ============================================
 // STATE
 // ============================================
@@ -88,7 +79,6 @@ let agentState = {
   stats: { totalTrades: history.totalTrades, wins: history.wins, losses: history.losses, pnl: history.totalPnl, winRate: 0 },
   topMomentum: [], bnbBalance: 0, usdtBalance: 0, usdValue: 0, lastUpdate: null, _logs: []
 };
-
 function saveState() {
   agentState.lastUpdate = new Date().toISOString();
   agentState.trades = history.trades;
@@ -99,18 +89,15 @@ function saveState() {
   if (history.totalTrades > 0) agentState.stats.winRate = ((history.wins / history.totalTrades) * 100).toFixed(1);
   fs.writeFileSync(STATE_FILE, JSON.stringify(agentState, null, 2));
 }
-
 function addLog(type, message) {
   agentState._logs.unshift({ id: Date.now() + Math.random(), type, message, timestamp: Date.now() });
   if (agentState._logs.length > 100) agentState._logs = agentState._logs.slice(0, 100);
   console.log('  [' + type + '] ' + message);
 }
-
 // ============================================
 // CONTROL
 // ============================================
 let tradingActive = true;
-
 function checkControl() {
   try {
     if (fs.existsSync(CONTROL_FILE)) {
@@ -118,39 +105,34 @@ function checkControl() {
       if (Date.now() - control.timestamp < 10000) {
         if (control.action === 'start' && !tradingActive) {
           tradingActive = true; agentState.running = true; saveState();
-          addLog('system', 'Trading STARTED');
+          addLog('system', 'STARTED');
           fs.writeFileSync(CONTROL_FILE, JSON.stringify({ action: 'none', timestamp: 0 }));
         }
         if (control.action === 'stop' && tradingActive) {
           tradingActive = false; agentState.running = false; saveState();
-          addLog('system', 'Trading STOPPED');
+          addLog('system', 'STOPPED');
           fs.writeFileSync(CONTROL_FILE, JSON.stringify({ action: 'none', timestamp: 0 }));
         }
       }
     }
   } catch (e) {}
 }
-
 // ============================================
-// MAIN LOOP - FAST DEMO MODE
+// MAIN LOOP
 // ============================================
 async function cycle() {
   checkControl();
   if (!tradingActive) { agentState.running = false; saveState(); return; }
   agentState.running = true;
-
   const bnbData = await getBnbBalance();
   agentState.bnbBalance = bnbData.bnb;
   agentState.usdValue = bnbData.usd;
   agentState.market.btc = bnbData.usd > 0 ? (bnbData.usd / 0.005) : 0;
-
-  // Auto-close position after 60 seconds for demo speed
   if (agentState.openPosition) {
     const heldSecs = (Date.now() - agentState.openPosition.entryTime) / 1000;
     console.log('  Holding: ' + agentState.openPosition.symbol + ' (' + heldSecs.toFixed(0) + 's)');
-    
     if (heldSecs >= 60) {
-      addLog('position_close', 'Closing ' + agentState.openPosition.symbol + ' after 60s');
+      addLog('position_close', 'Closing ' + agentState.openPosition.symbol);
       const result = twakSwap(agentState.openPosition.amount + '', agentState.openPosition.symbol, 'BNB');
       if (result.success) {
         history.wins++;
@@ -162,35 +144,17 @@ async function cycle() {
     saveHistory(history); saveState();
     return;
   }
-
   console.log('CYCLE | BNB: ' + bnbData.bnb.toFixed(6) + ' | $' + bnbData.usd.toFixed(2) + ' | Trades: ' + history.totalTrades);
-
-  if (bnbData.bnb < 0.0003) {
-    addLog('trade_blocked', 'BNB too low: ' + bnbData.bnb.toFixed(4));
-    saveState();
-    return;
-  }
-
-  // Cooldown
+  if (bnbData.bnb < 0.0005) { addLog('trade_blocked', 'BNB too low'); saveState(); return; }
   const sinceLast = Date.now() - history.lastTradeTime;
-  if (history.lastTradeTime > 0 && sinceLast < COOLDOWN_SECONDS * 1000) {
-    saveState();
-    return;
-  }
-
-  if (history.totalTrades >= MAX_DAILY_TRADES) { saveState(); return; }
-
-  // Rotate through pairs
+  if (history.lastTradeTime > 0 && sinceLast < COOLDOWN_SECONDS * 1000) { saveState(); return; }
   const target = TRADE_PAIRS[history.totalTrades % TRADE_PAIRS.length];
-  const amount = MAX_TRADE_BNB;
-
-  addLog('signal_buy', 'BUY ' + target + ' | ' + amount.toFixed(6) + ' BNB');
-  const result = twakSwap(amount.toFixed(6), 'BNB', target);
-
+  addLog('signal_buy', 'BUY ' + target + ' | ' + MAX_TRADE_BNB.toFixed(6) + ' BNB');
+  const result = twakSwap(MAX_TRADE_BNB.toFixed(6), 'BNB', target);
   if (result.success) {
     history.totalTrades++;
     history.lastTradeTime = Date.now();
-    agentState.openPosition = { symbol: target, entryPrice: 0, entryTime: Date.now(), amount: amount.toFixed(6), txHash: result.txHash };
+    agentState.openPosition = { symbol: target, entryTime: Date.now(), amount: MAX_TRADE_BNB.toFixed(6), txHash: result.txHash };
     history.trades.push({ ...agentState.openPosition, result: 'OPEN' });
     saveHistory(history);
     addLog('trade_approved', result.txHash);
@@ -198,28 +162,21 @@ async function cycle() {
   } else {
     addLog('trade_blocked', target + ': ' + (result.error || 'failed').substring(0, 80));
   }
-
   saveState();
 }
-
 // ============================================
 // START
 // ============================================
 console.log('========================================');
-console.log('  SYNTA v15 - DEMO MODE');
-console.log('  Cycle: ' + CYCLE_SECONDS + 's | Cooldown: ' + COOLDOWN_SECONDS + 's');
-console.log('  Trade size: ' + MAX_TRADE_BNB + ' BNB');
-console.log('  Position close: 60 seconds');
+console.log('  SYNTA v17 - TWAK via direct Node call');
+console.log('  CMD: ' + TWAK_CMD);
 console.log('========================================');
-
 fs.writeFileSync(CONTROL_FILE, JSON.stringify({ action: 'none', timestamp: 0 }));
 saveState();
 setInterval(checkControl, 2000);
-
-addLog('system', 'DEMO MODE - ' + CYCLE_SECONDS + 's cycles');
+addLog('system', 'v17 - TWAK direct');
 cycle();
 setInterval(cycle, CYCLE_SECONDS * 1000);
-
 process.on('SIGINT', function() {
   agentState.running = false;
   saveHistory(history); saveState();
