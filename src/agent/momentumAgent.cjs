@@ -1,8 +1,7 @@
 ﻿// src/agent/momentumAgent.cjs
-// Syntra Agent v19 - HYBRID (TWAK data + ethers.js execution)
-// TWAK surfaces: price, trending, portfolio
-// Execution: ethers.js PancakeSwap direct (self-custody)
-// Competition rules: 30% drawdown cap, 1 trade/day min, stables rotation
+// Syntra Agent v21 - COMPETITION READY
+// Rules: 30% drawdown cap, 1 trade/day min, eligible tokens
+// TWAK: price, trending | Execution: ethers.js PancakeSwap
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -17,12 +16,10 @@ const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
 const STATE_FILE = path.join(__dirname, '..', '..', 'agent-state.json');
 const CONTROL_FILE = path.join(__dirname, '..', '..', 'agent-control.json');
 const HISTORY_FILE = path.join(__dirname, '..', '..', 'trade-history.json');
-// PancakeSwap V2
 const PANCAKE_ROUTER = '0x10ED43C718714eb63d5aA57B78B54704E256024E';
 const ROUTER_ABI = [
   'function swapExactETHForTokens(uint amountOutMin, address[] path, address to, uint deadline) payable returns (uint[] amounts)',
   'function swapExactTokensForETH(uint amountIn, uint amountOutMin, address[] path, address to, uint deadline) returns (uint[] amounts)',
-  'function swapExactTokensForTokens(uint amountIn, uint amountOutMin, address[] path, address to, uint deadline) returns (uint[] amounts)',
   'function getAmountsOut(uint amountIn, address[] path) view returns (uint[] amounts)'
 ];
 const ERC20_ABI = [
@@ -30,125 +27,113 @@ const ERC20_ABI = [
   'function balanceOf(address) view returns (uint256)',
   'function decimals() view returns (uint8)'
 ];
-// BSC token addresses
+// BSC tokens - using contract addresses for reliability
 const TOKENS = {
   WBNB: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c',
   USDT: '0x55d398326f99059fF775485246999027B3197955',
   USDC: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d',
   BUSD: '0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56',
   ETH: '0x2170Ed0880ac9A755fd29B2688956BD959F933F8',
+  CAKE: '0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82',
+  XRP: '0x1D2F0da169ceB9fC7B3144628dB156f3F6c60dBE',
+  ADA: '0x3EE2200Efb3400fAbB9AacF31297cBdD1d435D47',
+  DOGE: '0xbA2aE424d960c26247Dd6c32edC70B295c744C43',
+  DOT: '0x7083609fCE4d1d8Dc0C979AAb8c869Ea2C873402',
 };
 const router = new ethers.Contract(PANCAKE_ROUTER, ROUTER_ABI, wallet);
 // ============================================
 // COMPETITION RULES
 // ============================================
-const STARTING_CAPITAL = 5.00;           // Initial USD value
-const MAX_DRAWDOWN = 0.30;               // 30% max drawdown
-const MIN_TRADES_PER_DAY = 1;            // Must trade daily
-const CYCLE_SECONDS = 30;
-const COOLDOWN_SECONDS = 45;
-const MAX_TRADE_BNB = 0.0003;            // ~.18 per trade
-// Stablecoin rotation strategy
-const STABLES = ['USDT', 'USDC', 'BUSD'];
-const YIELD_TOKENS = ['ETH'];
+const MAX_DRAWDOWN = 0.30;
+const MIN_TRADES_PER_DAY = 1;
+const CYCLE_SECONDS = 60;       // Check every 60 seconds
+const COOLDOWN_SECONDS = 120;   // Trade max every 2 minutes
+const MAX_TRADE_BNB = 0.0005;   // ~.30 per trade
+const TRADE_TOKENS = ['USDT', 'USDC', 'BUSD', 'ETH', 'CAKE'];
 // ============================================
-// TWAK DATA SURFACES (market reads)
+// TWAK DATA (market reads)
 // ============================================
 function twakData(cmd) {
   try {
     const result = execSync('npx @trustwallet/cli ' + cmd, { 
-      encoding: 'utf8', 
-      timeout: 15000,
-      env: { ...process.env }
+      encoding: 'utf8', timeout: 15000, env: { ...process.env },
+      stdio: ['pipe', 'pipe', 'pipe']
     });
     return JSON.parse(result);
-  } catch (e) {
-    return null;
-  }
+  } catch (e) { return null; }
 }
-function getTrendingTokens() {
-  const data = twakData('trending --limit 3 --json');
-  if (Array.isArray(data)) return data.map(t => t.symbol || t.name).filter(Boolean);
-  return [];
-}
-function getTokenPrice(symbol) {
+function getPrice(symbol) {
   const data = twakData('price ' + symbol + ' --json');
   return data?.priceUsd || 0;
 }
 // ============================================
-// BALANCE (ethers.js - fast, reliable)
+// BALANCE
 // ============================================
 async function getPortfolio() {
   try {
-    const bnbBalance = await provider.getBalance(AGENT_ADDRESS);
-    const bnb = parseFloat(ethers.utils.formatEther(bnbBalance));
-    // Get BNB price via TWAK
-    const bnbPrice = getTokenPrice('BNB') || 580;
-    const usdValue = bnb * bnbPrice;
-    // Check stablecoin balances
-    let stablesUsd = 0;
-    for (const sym of STABLES) {
-      const addr = TOKENS[sym];
-      if (addr) {
-        try {
-          const contract = new ethers.Contract(addr, ERC20_ABI, provider);
-          const bal = await contract.balanceOf(AGENT_ADDRESS);
-          const dec = await contract.decimals();
-          const amount = parseFloat(ethers.utils.formatUnits(bal, dec));
-          stablesUsd += amount; // stables = 
-        } catch (e) {}
-      }
-    }
-    const totalUsd = usdValue + stablesUsd;
-    const drawdown = STARTING_CAPITAL > 0 ? ((STARTING_CAPITAL - totalUsd) / STARTING_CAPITAL) * 100 : 0;
-    return { bnb, bnbUsd: usdValue, stablesUsd, totalUsd, drawdown };
+    const bnbBal = await provider.getBalance(AGENT_ADDRESS);
+    const bnb = parseFloat(ethers.utils.formatEther(bnbBal));
+    const bnbPrice = getPrice('BNB') || 580;
+    return { bnb, totalUsd: bnb * bnbPrice, bnbPrice };
   } catch (e) {
-    return { bnb: 0, bnbUsd: 0, stablesUsd: 0, totalUsd: 0, drawdown: 0 };
+    return { bnb: 0, totalUsd: 0, bnbPrice: 580 };
   }
 }
 // ============================================
-// EXECUTION (ethers.js PancakeSwap)
+// SWAP BNB -> TOKEN (safe, with error handling)
 // ============================================
-async function swapBNBtoToken(tokenSymbol, bnbAmount) {
+async function buyToken(symbol, bnbAmount) {
   try {
-    const tokenAddr = TOKENS[tokenSymbol];
-    if (!tokenAddr) return { success: false, error: 'Unknown token' };
+    const tokenAddr = TOKENS[symbol];
+    if (!tokenAddr) return { success: false, error: 'No address for ' + symbol };
     const amountIn = ethers.utils.parseEther(bnbAmount.toFixed(6));
     const path = [TOKENS.WBNB, tokenAddr];
-    const amounts = await router.getAmountsOut(amountIn, path);
+    let amounts;
+    try {
+      amounts = await router.getAmountsOut(amountIn, path);
+    } catch (e) {
+      return { success: false, error: 'No liquidity for ' + symbol };
+    }
     const minOut = amounts[1].mul(95).div(100);
     const deadline = Math.floor(Date.now() / 1000) + 300;
     const tx = await router.swapExactETHForTokens(minOut, path, AGENT_ADDRESS, deadline, {
-      value: amountIn,
-      gasLimit: 350000
+      value: amountIn, gasLimit: 400000
     });
     const receipt = await tx.wait();
-    return { success: true, txHash: receipt.transactionHash };
+    return { success: true, txHash: receipt.transactionHash, outputAmount: amounts[1] };
   } catch (e) {
-    return { success: false, error: e.message?.substring(0, 80) || 'Swap failed' };
+    return { success: false, error: (e.message || '').substring(0, 100) };
   }
 }
-async function swapTokenToBNB(tokenSymbol, tokenAmount) {
+// ============================================
+// SWAP TOKEN -> BNB (safe, with error handling)
+// ============================================
+async function sellToken(symbol) {
   try {
-    const tokenAddr = TOKENS[tokenSymbol];
-    if (!tokenAddr) return { success: false, error: 'Unknown token' };
+    const tokenAddr = TOKENS[symbol];
+    if (!tokenAddr) return { success: false, error: 'No address' };
     const tokenContract = new ethers.Contract(tokenAddr, ERC20_ABI, wallet);
     const dec = await tokenContract.decimals();
-    const amountIn = ethers.utils.parseUnits(tokenAmount.toFixed(dec), dec);
-    // Approve router
-    const approveTx = await tokenContract.approve(PANCAKE_ROUTER, amountIn);
-    await approveTx.wait();
+    const balance = await tokenContract.balanceOf(AGENT_ADDRESS);
+    if (balance.isZero()) return { success: false, error: 'Zero balance' };
+    // Approve
+    try {
+      const approveTx = await tokenContract.approve(PANCAKE_ROUTER, balance);
+      await approveTx.wait();
+    } catch (e) {
+      return { success: false, error: 'Approval failed' };
+    }
     const path = [tokenAddr, TOKENS.WBNB];
-    const amounts = await router.getAmountsOut(amountIn, path);
+    const amounts = await router.getAmountsOut(balance, path);
     const minOut = amounts[1].mul(95).div(100);
     const deadline = Math.floor(Date.now() / 1000) + 300;
-    const tx = await router.swapExactTokensForETH(amountIn, minOut, path, AGENT_ADDRESS, deadline, {
-      gasLimit: 350000
+    const tx = await router.swapExactTokensForETH(balance, minOut, path, AGENT_ADDRESS, deadline, {
+      gasLimit: 400000
     });
     const receipt = await tx.wait();
     return { success: true, txHash: receipt.transactionHash };
   } catch (e) {
-    return { success: false, error: e.message?.substring(0, 80) || 'Swap failed' };
+    return { success: false, error: (e.message || '').substring(0, 100) };
   }
 }
 // ============================================
@@ -157,10 +142,17 @@ async function swapTokenToBNB(tokenSymbol, tokenAmount) {
 function loadHistory() {
   try { if (fs.existsSync(HISTORY_FILE)) return JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf8')); }
   catch (e) {}
-  return { trades: [], totalTrades: 0, wins: 0, losses: 0, totalPnl: 0, lastTradeTime: 0, peakCapital: STARTING_CAPITAL };
+  return { trades: [], totalTrades: 0, wins: 0, losses: 0, totalPnl: 0, lastTradeTime: 0, peakCapital: 0, tradesToday: 0, lastDay: '' };
 }
 function saveHistory(h) { fs.writeFileSync(HISTORY_FILE, JSON.stringify(h, null, 2)); }
 let history = loadHistory();
+// Reset daily counter
+const today = new Date().toISOString().split('T')[0];
+if (history.lastDay !== today) {
+  history.tradesToday = 0;
+  history.lastDay = today;
+  saveHistory(history);
+}
 // ============================================
 // STATE
 // ============================================
@@ -168,7 +160,7 @@ let agentState = {
   running: false, agent: { address: AGENT_ADDRESS, configured: true },
   market: { btc: 0 }, trades: history.trades, openPosition: null, currentDecision: null,
   stats: { totalTrades: history.totalTrades, wins: history.wins, losses: history.losses, pnl: history.totalPnl, winRate: 0 },
-  topMomentum: [], bnbBalance: 0, usdtBalance: 0, usdValue: 0, totalUsd: 0, drawdown: 0,
+  topMomentum: [], bnbBalance: 0, usdValue: 0, totalUsd: 0, drawdown: 0,
   lastUpdate: null, _logs: []
 };
 function saveState() {
@@ -213,157 +205,143 @@ function checkControl() {
 // MAIN LOOP
 // ============================================
 async function cycle() {
-  checkControl();
-  if (!tradingActive) { agentState.running = false; saveState(); return; }
-  agentState.running = true;
-  const port = await getPortfolio();
-  agentState.bnbBalance = port.bnb;
-  agentState.usdValue = port.totalUsd;
-  agentState.totalUsd = port.totalUsd;
-  agentState.drawdown = port.drawdown;
-  agentState.market.btc = getTokenPrice('BTC') || 85000;
-  // Update peak capital
-  if (port.totalUsd > history.peakCapital) history.peakCapital = port.totalUsd;
-  console.log('CYCLE | Total: $' + port.totalUsd.toFixed(2) + ' | Drawdown: ' + port.drawdown.toFixed(1) + '% | Trades: ' + history.totalTrades);
-  // ==========================================
-  // COMPETITION RULE: 30% DRAWDOWN CAP
-  // ==========================================
-  if (port.drawdown >= MAX_DRAWDOWN * 100) {
-    addLog('trade_blocked', 'DRAWDOWN CAP HIT: ' + port.drawdown.toFixed(1) + '% - Trading halted');
-    agentState.currentDecision = { decision: 'HALT', conviction: 0, reason: 'DRAWDOWN_CAP' };
-    saveState();
-    return;
-  }
-  // ==========================================
-  // CLOSE POSITION AFTER 60 SECONDS
-  // ==========================================
-  if (agentState.openPosition) {
-    const heldSecs = (Date.now() - agentState.openPosition.entryTime) / 1000;
-    console.log('  Position: ' + agentState.openPosition.symbol + ' (' + heldSecs.toFixed(0) + 's)');
-    if (heldSecs >= 60) {
-      addLog('position_close', 'Closing ' + agentState.openPosition.symbol);
-      const result = await swapTokenToBNB(agentState.openPosition.symbol, agentState.openPosition.tokenAmount);
-      if (result.success) {
-        history.wins++;
-        history.trades.push({ ...agentState.openPosition, result: 'CLOSED', closeTx: result.txHash, closeTime: Date.now() });
-        agentState.openPosition = null;
-        addLog('trade_approved', 'Closed: ' + result.txHash);
-      }
+  try {
+    checkControl();
+    if (!tradingActive) { agentState.running = false; saveState(); return; }
+    agentState.running = true;
+    const port = await getPortfolio();
+    agentState.bnbBalance = port.bnb;
+    agentState.totalUsd = port.totalUsd;
+    agentState.usdValue = port.totalUsd;
+    // Track peak capital
+    if (port.totalUsd > history.peakCapital) {
+      history.peakCapital = port.totalUsd;
+      saveHistory(history);
     }
-    saveHistory(history); saveState();
-    return;
-  }
-  // ==========================================
-  // CHECK COOLDOWN
-  // ==========================================
-  const sinceLast = Date.now() - history.lastTradeTime;
-  if (history.lastTradeTime > 0 && sinceLast < COOLDOWN_SECONDS * 1000) {
-    saveState();
-    return;
-  }
-  // ==========================================
-  // STRATEGY: Rotate BNB -> Stable -> BNB
-  // Even trades: BNB -> stable, Odd trades: stable -> BNB
-  // ==========================================
-  // Get trending via TWAK for signal display
-  const trending = getTrendingTokens();
-  agentState.topMomentum = trending.map((t, i) => ({
-    symbol: t, price: getTokenPrice(t), score: 80 - i * 10, direction: 'up', change: '+1.2'
-  }));
-  // DECISION: Alternate between buying stables and buying BNB
-  const isBuyingStable = history.totalTrades % 2 === 0;
-  if (isBuyingStable) {
-    // BUY STABLECOIN with BNB
-    if (port.bnb < 0.001) {
-      addLog('trade_blocked', 'BNB too low for swap');
+    if (history.peakCapital === 0) {
+      history.peakCapital = port.totalUsd;
+      saveHistory(history);
+    }
+    const drawdown = history.peakCapital > 0 
+      ? ((history.peakCapital - port.totalUsd) / history.peakCapital) * 100 
+      : 0;
+    agentState.drawdown = drawdown;
+    agentState.market.btc = getPrice('BTC') || 85000;
+    // Trending for dashboard
+    try {
+      const trending = twakData('trending --limit 3 --json');
+      if (Array.isArray(trending)) {
+        agentState.topMomentum = trending.map((t, i) => ({
+          symbol: t.symbol || t.name, 
+          price: getPrice(t.symbol || t.name), 
+          score: 80 - i * 10, 
+          direction: 'up', 
+          change: '+1.2'
+        }));
+      }
+    } catch (e) {}
+    console.log('CYCLE | $' + port.totalUsd.toFixed(2) + ' | DD: ' + drawdown.toFixed(1) + '% | Trades: ' + history.tradesToday);
+    // ==========================================
+    // DRAWDOWN CHECK - COMPETITION RULE
+    // ==========================================
+    if (drawdown >= MAX_DRAWDOWN * 100) {
+      addLog('trade_blocked', 'DRAWDOWN CAP: ' + drawdown.toFixed(1) + '% - Trading halted');
+      agentState.currentDecision = { decision: 'HALT', reason: 'DRAWDOWN_CAP' };
       saveState();
       return;
     }
-    const target = STABLES[history.totalTrades % STABLES.length];
-    const amount = Math.min(MAX_TRADE_BNB, port.bnb * 0.05);
-    addLog('signal_buy', 'BNB -> ' + target + ' | ' + amount.toFixed(6) + ' BNB');
-    agentState.currentDecision = { decision: 'BUY', conviction: 80, target, amount };
-    const result = await swapBNBtoToken(target, amount);
-    if (result.success) {
-      history.totalTrades++;
-      history.lastTradeTime = Date.now();
-      agentState.openPosition = { 
-        symbol: target, entryTime: Date.now(), amount: amount.toFixed(6), 
-        tokenAmount: amount * (port.bnb > 0 ? port.bnbUsd / port.bnb / 1 : 580),
-        txHash: result.txHash 
-      };
-      history.trades.push({ ...agentState.openPosition, result: 'OPEN' });
-      saveHistory(history);
-      addLog('trade_approved', result.txHash);
-      addLog('position_open', target + ' | close in 60s');
-    } else {
-      addLog('trade_blocked', target + ': ' + (result.error || 'failed'));
-    }
-  } else {
-    // BUY BNB with stablecoin (close previous position or use existing stables)
-    // Find which stable we hold
-    let heldStable = null;
-    let heldAmount = 0;
-    for (const sym of STABLES) {
-      try {
-        const contract = new ethers.Contract(TOKENS[sym], ERC20_ABI, provider);
-        const bal = await contract.balanceOf(AGENT_ADDRESS);
-        const dec = await contract.decimals();
-        const amount = parseFloat(ethers.utils.formatUnits(bal, dec));
-        if (amount > 0.1) {
-          heldStable = sym;
-          heldAmount = amount;
-          break;
+    // ==========================================
+    // CLOSE POSITION AFTER 2 MINUTES
+    // ==========================================
+    if (agentState.openPosition) {
+      const held = (Date.now() - agentState.openPosition.entryTime) / 1000;
+      console.log('  Holding: ' + agentState.openPosition.symbol + ' (' + held.toFixed(0) + 's)');
+      if (held >= 120) {
+        addLog('position_close', 'Closing ' + agentState.openPosition.symbol);
+        const result = await sellToken(agentState.openPosition.symbol);
+        if (result.success) {
+          history.wins++;
+          history.trades.push({ ...agentState.openPosition, result: 'CLOSED', closeTx: result.txHash, closeTime: Date.now() });
+          agentState.openPosition = null;
+          addLog('trade_approved', 'Closed: ' + result.txHash);
+          saveHistory(history);
         }
-      } catch (e) {}
+      }
+      saveState();
+      return;
     }
-    if (heldStable && heldAmount > 0.1) {
-      const sellAmount = Math.min(heldAmount, 0.5);
-      addLog('signal_buy', heldStable + ' -> BNB | ' + sellAmount.toFixed(2) + ' ' + heldStable);
-      agentState.currentDecision = { decision: 'BUY', conviction: 80, target: 'BNB', amount: sellAmount };
-      const result = await swapTokenToBNB(heldStable, sellAmount);
+    // ==========================================
+    // COOLDOWN CHECK
+    // ==========================================
+    if (Date.now() - history.lastTradeTime < COOLDOWN_SECONDS * 1000) {
+      saveState();
+      return;
+    }
+    // ==========================================
+    // BALANCE CHECK
+    // ==========================================
+    if (port.bnb < 0.001) {
+      addLog('trade_blocked', 'BNB too low: ' + port.bnb.toFixed(4));
+      saveState();
+      return;
+    }
+    // ==========================================
+    // MINIMUM 1 TRADE PER DAY
+    // ==========================================
+    if (history.tradesToday < MIN_TRADES_PER_DAY || history.tradesToday < 10) {
+      // TRADE: BNB -> Token
+      const target = TRADE_TOKENS[history.totalTrades % TRADE_TOKENS.length];
+      const amount = Math.min(MAX_TRADE_BNB, port.bnb * 0.05);
+      addLog('signal_buy', 'BNB -> ' + target + ' | ' + amount.toFixed(6) + ' BNB');
+      agentState.currentDecision = { decision: 'BUY', conviction: 75, target, amount };
+      const result = await buyToken(target, amount);
       if (result.success) {
         history.totalTrades++;
+        history.tradesToday++;
         history.lastTradeTime = Date.now();
-        history.trades.push({ symbol: 'BNB', amount: sellAmount.toFixed(2), txHash: result.txHash, result: 'OPEN', entryTime: Date.now() });
+        agentState.openPosition = {
+          symbol: target, entryTime: Date.now(), amount: amount.toFixed(6), txHash: result.txHash
+        };
+        history.trades.push({ ...agentState.openPosition, result: 'OPEN' });
         saveHistory(history);
         addLog('trade_approved', result.txHash);
-        addLog('position_open', 'BNB from ' + heldStable);
-        agentState.openPosition = { symbol: 'BNB', entryTime: Date.now(), amount: sellAmount.toFixed(2), txHash: result.txHash };
+        addLog('position_open', target + ' | close in 120s');
       } else {
-        addLog('trade_blocked', heldStable + ': ' + (result.error || 'failed'));
+        addLog('trade_blocked', target + ': ' + (result.error || 'failed'));
       }
     } else {
-      addLog('signal_hold', 'No stables to sell, waiting for BNB->stable trade');
+      console.log('  Daily trade minimum met (' + history.tradesToday + ' trades)');
     }
+    saveState();
+  } catch (e) {
+    console.log('Cycle error: ' + e.message);
+    saveState();
   }
-  // Record PnL
-  history.totalPnl = port.totalUsd - STARTING_CAPITAL;
-  saveHistory(history);
-  saveState();
 }
 // ============================================
-// STARTUP
+// START
 // ============================================
 console.log('========================================');
-console.log('  SYNTA v19 - HYBRID (TWAK data + ethers.js exec)');
-console.log('  Strategy: BNB <-> Stables rotation');
-console.log('  Drawdown cap: ' + (MAX_DRAWDOWN * 100) + '%');
-console.log('  Starting capital: $' + STARTING_CAPITAL);
+console.log('  SYNTA v21 - COMPETITION READY');
+console.log('  Rules: 30% DD | 1+ trade/day | BSC');
 console.log('========================================');
+// Clean start
+try { fs.unlinkSync(STATE_FILE); } catch (e) {}
+try { fs.unlinkSync(CONTROL_FILE); } catch (e) {}
 fs.writeFileSync(CONTROL_FILE, JSON.stringify({ action: 'none', timestamp: 0 }));
 saveState();
 setInterval(checkControl, 2000);
-// Run initial cycle after 3 seconds
 setTimeout(async () => {
   const p = await getPortfolio();
-  addLog('system', 'Portfolio: $' + p.totalUsd.toFixed(2) + ' | Drawdown cap: ' + (MAX_DRAWDOWN*100) + '%');
+  history.peakCapital = p.totalUsd;
+  saveHistory(history);
+  addLog('system', 'Portfolio: $' + p.totalUsd.toFixed(2) + ' | Rules: 30% DD, 1 trade/day min');
   cycle();
   setInterval(cycle, CYCLE_SECONDS * 1000);
 }, 3000);
 process.on('SIGINT', function() {
   agentState.running = false;
   saveHistory(history); saveState();
-  console.log('Shutdown. Trades: ' + history.totalTrades + ' | PnL: $' + history.totalPnl.toFixed(2));
+  console.log('Shutdown. Trades: ' + history.totalTrades);
   process.exit(0);
 });
