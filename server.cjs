@@ -171,6 +171,21 @@ app.post('/api/twak/sign', (req, res) => {
 // ============================================
 // START SERVER (NO AUTO-START AGENT)
 // ============================================
+// WIPE STALE STATE ON STARTUP
+try {
+  if (fs.existsSync(STATE_FILE)) {
+    const state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+    const age = Date.now() - new Date(state.lastUpdate || 0).getTime();
+    if (age > 300000 || !state.lastUpdate) {
+      console.log('Wiping stale state file (age: ' + Math.round(age/60000) + ' min)');
+      fs.unlinkSync(STATE_FILE);
+    }
+  }
+  if (fs.existsSync(CONTROL_FILE)) fs.unlinkSync(CONTROL_FILE);
+} catch(e) { 
+  try { fs.unlinkSync(STATE_FILE); } catch(e2) {}
+  try { fs.unlinkSync(CONTROL_FILE); } catch(e2) {}
+}
 server.listen(PORT, () => {
   console.log('========================================')
   console.log('  SYNTA SERVER v3')
@@ -181,3 +196,4 @@ server.listen(PORT, () => {
 })
 process.on('SIGINT', () => { stopAgent(); process.exit(0) })
 process.on('SIGTERM', () => { stopAgent(); process.exit(0) })
+
