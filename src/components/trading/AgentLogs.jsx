@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { API_URL } from '../../utils/api'
 
 export default function AgentLogs() {

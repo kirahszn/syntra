@@ -1,4 +1,4 @@
-﻿// src/agent/momentumAgent.cjs
+// src/agent/momentumAgent.cjs
 // Syntra Agent v26 - FINAL CLEAN
 const { execSync } = require('child_process');
 const fs = require('fs');
@@ -58,6 +58,8 @@ function loadHistory() {
 }
 function saveHistory(h) { fs.writeFileSync(HISTORY_FILE, JSON.stringify(h, null, 2)); }
 var history = loadHistory();
+// Don't reset - use loaded values
+if (history.totalTrades > 0) { tradeCount = history.totalTrades; }
 var agentState = {
   running: true, agent: { address: AGENT_ADDRESS, configured: true },
   market: { btc: 0 }, trades: history.trades, openPosition: null, currentDecision: null,
@@ -78,7 +80,7 @@ function saveState() {
   fs.writeFileSync(STATE_FILE, JSON.stringify(agentState, null, 2));
 }
 function addLog(type, message) {
-  agentState._logs.unshift({ id: Date.now(), type: message, timestamp: Date.now() });
+  agentState._logs.unshift({ id: Date.now() + Math.random(), type: message, timestamp: Date.now() });
   if (agentState._logs.length > 100) agentState._logs = agentState._logs.slice(0, 100);
   console.log('  [' + type + '] ' + message);
 }
@@ -109,7 +111,7 @@ async function cycle() {
           var result = await buyUSDT(pos.bnbSpent);
           if (result.success) {
             var profit = (pos.bnbSpent * TP_PCT) / 100;
-            history.wins++; history.totalProfit += profit; history.totalPnl += profit;
+            history.wins++; history.totalProfit += profit; history.totalPnl += profit * 1000000;
             history.trades.push({ symbol: pos.symbol, result: 'WIN', entryPrice: pos.entryPrice, exitPrice: bnbPrice, profit: profit.toFixed(6), closeTx: result.txHash, closeTime: Date.now() });
             agentState.openPosition = null;
             addLog('trade_approved', 'WIN +$' + profit.toFixed(4));
@@ -120,7 +122,7 @@ async function cycle() {
           var result = await buyUSDT(pos.bnbSpent);
           if (result.success) {
             var loss = (pos.bnbSpent * SL_PCT) / 100;
-            history.losses++; history.totalLoss += loss; history.totalPnl -= loss;
+            history.losses++; history.totalLoss += loss; history.totalPnl -= loss * 1000000;
             history.trades.push({ symbol: pos.symbol, result: 'LOSS', entryPrice: pos.entryPrice, exitPrice: bnbPrice, loss: loss.toFixed(6), closeTx: result.txHash, closeTime: Date.now() });
             agentState.openPosition = null;
             addLog('trade_blocked', 'LOSS -$' + loss.toFixed(4));
@@ -131,9 +133,8 @@ async function cycle() {
           var result = await buyUSDT(pos.bnbSpent);
           if (result.success) {
             var pnl = (pos.bnbSpent * change) / 100;
-            if (pnl >= 0) { history.wins++; history.totalProfit += pnl; }
-            else { history.losses++; history.totalLoss += Math.abs(pnl); }
-            history.totalPnl += pnl;
+            if (pnl >= 0) { history.wins++; history.totalProfit += pnl; } else { history.losses++; history.totalLoss += Math.abs(pnl); }
+            history.totalPnl += pnl * 1000000;
             history.trades.push({ symbol: pos.symbol, result: pnl >= 0 ? 'WIN' : 'LOSS', pnl: pnl.toFixed(6), closeTx: result.txHash, closeTime: Date.now() });
             agentState.openPosition = null;
             addLog('trade_approved', 'Closed PnL: $' + pnl.toFixed(4));
@@ -194,3 +195,4 @@ setTimeout(async () => {
   setInterval(cycle, CYCLE_SECONDS * 1000);
 }, 3000);
 process.on('SIGINT', () => { saveHistory(history); saveState(); process.exit(0); });
+

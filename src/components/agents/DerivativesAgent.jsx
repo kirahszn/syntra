@@ -179,9 +179,9 @@ export default function DerivativesAgent({ isMobile = false }) {
             flexWrap: 'wrap',
             gap: '4px'
           }}>
-            <span>Price: ${signal.price.toFixed(2)}</span>
+            <span>Price: ${Number(signal.price || 0).toFixed(2)}</span>
             <span style={{ color: signal.change24h > 0 ? '#00D4AA' : '#FF6B6B' }}>
-              24h: {signal.change24h > 0 ? '+' : ''}{signal.change24h.toFixed(2)}%
+              24h: {signal.change24h > 0 ? '+' : ''}{Number(signal.change24h || 0).toFixed(2)}%
             </span>
             <span>Updated: {new Date().toLocaleTimeString()}</span>
           </div>

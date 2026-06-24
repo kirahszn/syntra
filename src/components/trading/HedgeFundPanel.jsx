@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { WS_URL } from '../../utils/api'
 
 export default function HedgeFundPanel({ status }) {
@@ -37,7 +37,7 @@ export default function HedgeFundPanel({ status }) {
           </div>
         </div>
         <div style={{ marginTop: 16, fontSize: 12, opacity: 0.5 }}>
-          Agent Balance: {status.bnbBalance ? status.bnbBalance.toFixed(4) : '0'} BNB
+          Agent Balance: {status.bnbBalance ? Number(status.bnbBalance).toFixed(4) : '0'} BNB
         </div>
         <div style={{ fontSize: 12, opacity: 0.5 }}>
           Trades Today: {status.totalTrades || 0}

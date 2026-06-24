@@ -58,95 +58,283 @@
       "pnl": "-0.000000",
       "closeTx": "0x383e409d0fc244ad6bd5cb1946fbbd743f584655e2e7bb67bf0f80b52bbc442f",
       "closeTime": 1782206526230
+    },
+    {
+      "symbol": "BNB",
+      "result": "OPEN",
+      "entryPrice": 576.3166980642333,
+      "time": 1782292568687
+    },
+    {
+      "symbol": "BNB",
+      "result": "WIN",
+      "pnl": "0.000000",
+      "closeTx": "0xd4bf7e5c83804c1d839f9043f0c9a93f198b943f7a1945e2d6cd381008480ea2",
+      "closeTime": 1782292704348
+    },
+    {
+      "symbol": "BNB",
+      "result": "WIN",
+      "pnl": "0.000000",
+      "closeTx": "0x6948b66f3235a5cbb63d2e72ae43d862541d9b284406fd217589a058b9d4f289",
+      "closeTime": 1782292717310
+    },
+    {
+      "symbol": "BNB",
+      "result": "OPEN",
+      "entryPrice": 576.3430051111304,
+      "time": 1782292723261
+    },
+    {
+      "symbol": "BNB",
+      "result": "OPEN",
+      "entryPrice": 576.2120426082919,
+      "time": 1782293546288
+    },
+    {
+      "symbol": "BNB",
+      "result": "WIN",
+      "entryPrice": 576.2120426082919,
+      "exitPrice": 580,
+      "profit": "0.000000",
+      "closeTx": "0x48fae7479d00b02a9d5b7aa2c458297e4c51367bd15637ab06c358657c9deeed",
+      "closeTime": 1782293579015
+    },
+    {
+      "symbol": "BNB",
+      "result": "OPEN",
+      "entryPrice": 575.9839804603604,
+      "time": 1782293589894
+    },
+    {
+      "symbol": "BNB",
+      "result": "OPEN",
+      "entryPrice": 575.9323396229349,
+      "time": 1782294131586
+    },
+    {
+      "symbol": "BNB",
+      "result": "LOSS",
+      "pnl": "-0.000000",
+      "closeTx": "0x118b6ed3d73b1a82bd2d3777d08d14f94a390ecaba735a6a627e25ed404b9492",
+      "closeTime": 1782294271753
+    },
+    {
+      "symbol": "BNB",
+      "result": "OPEN",
+      "entryPrice": 576.1409164544763,
+      "time": 1782294656824
+    },
+    {
+      "symbol": "BNB",
+      "result": "WIN",
+      "pnl": "0.000000",
+      "closeTx": "0x4b5b80e1a29edbd04e3537b934089d6fc494be0f034b9367f1dae4e383961904",
+      "closeTime": 1782294784373
+    },
+    {
+      "symbol": "BNB",
+      "result": "OPEN",
+      "entryPrice": 576.3221111299949,
+      "time": 1782294791689
+    },
+    {
+      "symbol": "BNB",
+      "result": "WIN",
+      "pnl": "0.000000",
+      "closeTx": "0xad49b1f9f973853a0bf4c4da9d5d88391d8d47aa1634762a9df120fe5a88716f",
+      "closeTime": 1782294918113
+    },
+    {
+      "symbol": "BNB",
+      "result": "OPEN",
+      "entryPrice": 576.3286982799764,
+      "time": 1782294927363
     }
   ],
-  "openPosition": null,
-  "currentDecision": null,
+  "openPosition": {
+    "symbol": "BNB",
+    "direction": "LONG",
+    "entryPrice": 576.3286982799764,
+    "entryTime": 1782294927363,
+    "bnbSpent": 0.00015,
+    "txHash": "HOLDING"
+  },
+  "currentDecision": {
+    "decision": "BUY",
+    "conviction": 70,
+    "target": "BNB"
+  },
   "stats": {
-    "totalTrades": 3,
-    "wins": 2,
-    "losses": 2,
-    "pnl": 2.5026688332222616e-7,
-    "winRate": "66.7",
-    "totalProfit": 4.5384690658765325e-7,
-    "totalLoss": 2.0358002326542712e-7
+    "totalTrades": 11,
+    "wins": 7,
+    "losses": 3,
+    "pnl": 0.3159716418422625,
+    "winRate": "63.6",
+    "totalProfit": 7.912080535807384e-7,
+    "totalLoss": 2.1127573475981437e-7
   },
   "topMomentum": [],
-  "bnbBalance": 0.000680388006583416,
-  "usdValue": 0.38973996454519544,
-  "totalUsd": 0.38973996454519544,
-  "drawdown": 0.0034444519947981742,
-  "lastUpdate": "2026-06-23T09:32:17.860Z",
+  "bnbBalance": 0.006853454006583416,
+  "usdValue": 3.949967605005768,
+  "totalUsd": 3.949967605005768,
+  "drawdown": 8.057907694335062,
+  "lastUpdate": "2026-06-24T09:56:29.755Z",
   "_logs": [
     {
-      "id": 1782207137860,
-      "type": "BNB too low: 0.0007",
-      "timestamp": 1782207137860
+      "id": 1782294989755.769,
+      "type": "LONG | Entry: $576.33 | Now: $576.35 | 0.003%",
+      "timestamp": 1782294989755
     },
     {
-      "id": 1782207125465,
-      "type": "BNB too low: 0.0007",
-      "timestamp": 1782207125465
+      "id": 1782294971940.9941,
+      "type": "LONG | Entry: $576.33 | Now: $576.35 | 0.003%",
+      "timestamp": 1782294971940
     },
     {
-      "id": 1782207108305,
-      "type": "BNB too low: 0.0007",
-      "timestamp": 1782207108305
+      "id": 1782294957628.6152,
+      "type": "LONG | Entry: $576.33 | Now: $576.33 | 0.000%",
+      "timestamp": 1782294957628
     },
     {
-      "id": 1782207094140,
-      "type": "BNB too low: 0.0007",
-      "timestamp": 1782207094140
+      "id": 1782294942484.4202,
+      "type": "LONG | Entry: $576.33 | Now: $576.33 | 0.000%",
+      "timestamp": 1782294942484
     },
     {
-      "id": 1782207079239,
-      "type": "BNB too low: 0.0007",
-      "timestamp": 1782207079239
+      "id": 1782294927364.113,
+      "type": "LONG BNB @ $576.33 | TP:+0.15% SL:-0.08%",
+      "timestamp": 1782294927364
     },
     {
-      "id": 1782207063585,
-      "type": "BNB too low: 0.0007",
-      "timestamp": 1782207063585
+      "id": 1782294927363.1675,
+      "type": "BUY BNB @ $576.33 | time entry",
+      "timestamp": 1782294927363
     },
     {
-      "id": 1782207049142,
-      "type": "BNB too low: 0.0007",
-      "timestamp": 1782207049142
+      "id": 1782294918113.19,
+      "type": "Closed PnL: $0.0000",
+      "timestamp": 1782294918113
     },
     {
-      "id": 1782207033181,
-      "type": "BNB too low: 0.0007",
-      "timestamp": 1782207033181
+      "id": 1782294913226.975,
+      "type": "Time exit (0.00%)",
+      "timestamp": 1782294913226
     },
     {
-      "id": 1782207018379,
-      "type": "BNB too low: 0.0007",
-      "timestamp": 1782207018380
+      "id": 1782294913226.4026,
+      "type": "LONG | Entry: $576.32 | Now: $576.33 | 0.001%",
+      "timestamp": 1782294913226
     },
     {
-      "id": 1782207004045,
-      "type": "BNB too low: 0.0007",
-      "timestamp": 1782207004045
+      "id": 1782294896196.5671,
+      "type": "LONG | Entry: $576.32 | Now: $576.32 | 0.000%",
+      "timestamp": 1782294896196
     },
     {
-      "id": 1782206988271,
-      "type": "BNB too low: 0.0007",
-      "timestamp": 1782206988271
+      "id": 1782294882644.1606,
+      "type": "LONG | Entry: $576.32 | Now: $576.32 | 0.000%",
+      "timestamp": 1782294882644
     },
     {
-      "id": 1782206973987,
-      "type": "BNB too low: 0.0007",
-      "timestamp": 1782206973987
+      "id": 1782294866498.5266,
+      "type": "LONG | Entry: $576.32 | Now: $576.32 | 0.000%",
+      "timestamp": 1782294866498
     },
     {
-      "id": 1782206957806,
-      "type": "BNB too low: 0.0007",
-      "timestamp": 1782206957806
+      "id": 1782294851788.801,
+      "type": "LONG | Entry: $576.32 | Now: $576.32 | 0.000%",
+      "timestamp": 1782294851788
     },
     {
-      "id": 1782206951309,
-      "type": "Portfolio: $0.39",
-      "timestamp": 1782206951309
+      "id": 1782294836759.455,
+      "type": "LONG | Entry: $576.32 | Now: $576.32 | 0.000%",
+      "timestamp": 1782294836759
+    },
+    {
+      "id": 1782294821203.6501,
+      "type": "LONG | Entry: $576.32 | Now: $576.32 | 0.000%",
+      "timestamp": 1782294821203
+    },
+    {
+      "id": 1782294806282.4446,
+      "type": "LONG | Entry: $576.32 | Now: $576.32 | 0.000%",
+      "timestamp": 1782294806282
+    },
+    {
+      "id": 1782294791689.4219,
+      "type": "LONG BNB @ $576.32 | TP:+0.15% SL:-0.08%",
+      "timestamp": 1782294791689
+    },
+    {
+      "id": 1782294791689.1104,
+      "type": "BUY BNB @ $576.32 | dip -0.033%",
+      "timestamp": 1782294791689
+    },
+    {
+      "id": 1782294784373.9377,
+      "type": "Closed PnL: $0.0000",
+      "timestamp": 1782294784373
+    },
+    {
+      "id": 1782294778037.625,
+      "type": "Time exit (0.06%)",
+      "timestamp": 1782294778037
+    },
+    {
+      "id": 1782294778037.7705,
+      "type": "LONG | Entry: $576.14 | Now: $576.51 | 0.065%",
+      "timestamp": 1782294778037
+    },
+    {
+      "id": 1782294762860.1274,
+      "type": "LONG | Entry: $576.14 | Now: $576.51 | 0.065%",
+      "timestamp": 1782294762860
+    },
+    {
+      "id": 1782294746868.2664,
+      "type": "LONG | Entry: $576.14 | Now: $576.51 | 0.065%",
+      "timestamp": 1782294746868
+    },
+    {
+      "id": 1782294731131.412,
+      "type": "LONG | Entry: $576.14 | Now: $576.51 | 0.065%",
+      "timestamp": 1782294731131
+    },
+    {
+      "id": 1782294717672.3245,
+      "type": "LONG | Entry: $576.14 | Now: $576.41 | 0.047%",
+      "timestamp": 1782294717672
+    },
+    {
+      "id": 1782294701148.9592,
+      "type": "LONG | Entry: $576.14 | Now: $576.41 | 0.047%",
+      "timestamp": 1782294701148
+    },
+    {
+      "id": 1782294686230.1956,
+      "type": "LONG | Entry: $576.14 | Now: $576.41 | 0.047%",
+      "timestamp": 1782294686230
+    },
+    {
+      "id": 1782294671753.78,
+      "type": "LONG | Entry: $576.14 | Now: $576.41 | 0.047%",
+      "timestamp": 1782294671753
+    },
+    {
+      "id": 1782294656825.5386,
+      "type": "LONG BNB @ $576.14 | TP:+0.15% SL:-0.08%",
+      "timestamp": 1782294656825
+    },
+    {
+      "id": 1782294656824.0876,
+      "type": "BUY BNB @ $576.14 | time entry",
+      "timestamp": 1782294656824
+    },
+    {
+      "id": 1782294649862.8408,
+      "type": "Portfolio: $4.29",
+      "timestamp": 1782294649862
     }
   ]
 }

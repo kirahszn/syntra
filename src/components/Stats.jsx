@@ -1,4 +1,4 @@
-﻿import React, { memo, useState, useEffect, useMemo } from 'react'
+import React, { memo, useState, useEffect, useMemo } from 'react'
 import { API_URL } from '../utils/api'
 import { TrendingUp, Activity, DollarSign, Wallet, TrendingDown } from 'lucide-react'
 const safeNumber = (value, fallback = 0) => {
@@ -30,11 +30,11 @@ const Stats = memo(function Stats({ isMobile = false }) {
         if (statusData?.success) {
           const stats = statusData.stats || {}
           setTradeData({
-            totalTrades: safeNumber(stats.totalTrades, 0),
+            totalTrades: safeNumber((statusData.trades || []).length, 0),
             winRate: safeNumber(stats.winRate, 0),
             totalPnL: safeNumber(stats.pnl, 0),
-            wins: safeNumber(stats.wins, 0),
-            losses: safeNumber(stats.losses, 0)
+            wins: safeNumber(statusData.stats?.wins || statusData.wins, 0),
+            losses: safeNumber(statusData.stats?.losses || statusData.losses, 0)
           })
         }
       } catch (error) {

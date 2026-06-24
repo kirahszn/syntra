@@ -296,7 +296,7 @@ export default function RealTrading({ isMobile = false }) {
         }}>
           <p style={{ fontSize: '11px', color: 'rgba(255,255,255,0.3)' }}>Your Balance</p>
           <p style={{ fontSize: '24px', fontWeight: 700, color: '#00D4AA' }}>
-            {balance.toFixed(4)} BNB
+            {Number(balance || 0).toFixed(4)} BNB
           </p>
         </div>
       ) : isConnected ? (
@@ -340,7 +340,7 @@ export default function RealTrading({ isMobile = false }) {
             <div>
               <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.3)' }}>Price</p>
               <p style={{ fontSize: '18px', fontWeight: 700 }}>
-                ${pendingTrade.price.toFixed(2)}
+                ${Number(pendingTrade?.price || 0).toFixed(2)}
               </p>
             </div>
           </div>
