@@ -21,10 +21,10 @@ const ROUTER_ABI = [
   'function getAmountsOut(uint amountIn, address[] path) view returns (uint[] amounts)'
 ];
 const router = new ethers.Contract(PANCAKE_ROUTER, ROUTER_ABI, wallet);
-const TRADE_BNB = 0.00015;
+const TRADE_BNB = 0.0035;
 const CYCLE_SECONDS = 15;
-const TP_PCT = 0.15;
-const SL_PCT = 0.08;
+const TP_PCT = parseFloat(userSettings.takeProfitPercent) || 0.15;
+const SL_PCT = parseFloat(userSettings.stopLossPercent) || 0.08;
 function getBnbPrice() {
   try {
     var result = execSync('npx @trustwallet/cli price BNB --json', { encoding: 'utf8', timeout: 10000, env: { ...process.env } });
@@ -147,7 +147,7 @@ async function cycle() {
     }
     // Safety
     if (drawdown >= 30) { addLog('trade_blocked', 'DRAWDOWN 30%'); saveState(); return; }
-    if (port.bnb < 0.0008) { addLog('trade_blocked', 'BNB too low: ' + port.bnb.toFixed(4)); saveState(); return; }
+    if (port.bnb < 0.004) { addLog('trade_blocked', 'BNB too low: ' + port.bnb.toFixed(4)); saveState(); return; }
     // Entry signal
     var shouldEnter = false;
     var reason = '';
@@ -195,4 +195,5 @@ setTimeout(async () => {
   setInterval(cycle, CYCLE_SECONDS * 1000);
 }, 3000);
 process.on('SIGINT', () => { saveHistory(history); saveState(); process.exit(0); });
+
 
