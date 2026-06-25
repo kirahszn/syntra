@@ -1,4 +1,4 @@
-﻿// src/agent/momentumAgent.cjs
+// src/agent/momentumAgent.cjs
 // Syntra Agent v27 - CLEAN WITH SETTINGS
 const { execSync } = require('child_process');
 const fs = require('fs');
@@ -32,7 +32,7 @@ function loadSettings() {
   return {};
 }
 const userSettings = loadSettings();
-const TRADE_BNB = parseFloat(userSettings.maxTradeAmount) || 0.0017;
+const TRADE_BNB = parseFloat(userSettings.maxTradeAmount) || 0.0035;
 const CYCLE_SECONDS = 15;
 const TP_PCT = parseFloat(userSettings.takeProfitPercent) || 0.15;
 const SL_PCT = parseFloat(userSettings.stopLossPercent) || 0.08;
